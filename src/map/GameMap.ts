@@ -14,10 +14,10 @@ class GameMap extends Entity {
     }
 
     public async load(): Promise<void> {
-        const tileTexture = ResourceManager.instance.getTexture("ground");
+        const groundTexture = ResourceManager.instance.getTexture("ground");
         const geometry = new PlaneGeometry(40, 33);
         const material = new MeshStandardMaterial({
-            map: tileTexture,
+            map: groundTexture,
         });
 
         this.mesh = new Mesh(geometry, material);
