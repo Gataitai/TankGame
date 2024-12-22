@@ -1,9 +1,9 @@
 import { Box3, Mesh, MeshStandardMaterial, Sphere, Vector3 } from "three";
 import UpdatableEntity from "@/entities/UpdatableEntity.ts";
 import ResourceManager from "@/utils/ResourceManager.ts";
-import TreadsEffect from "@/effects/TreadsEffect.ts";
 import GameScene from "@/scene/GameScene.ts";
 import ExplosionEffect from "@/effects/ExplosionEffect.ts";
+import TreadsCanvas from "@/map/TreadsCanvas.ts";
 
 abstract class Tank extends UpdatableEntity {
     protected _rotation: number = 0;
@@ -71,14 +71,21 @@ abstract class Tank extends UpdatableEntity {
             this._distanceSinceLastTread += distanceTraveled;
 
             if (this._distanceSinceLastTread >= this._treadSpawnDistance) {
-                const treadEffect = new TreadsEffect(this.mesh.position.clone(), this._rotation);
-                treadEffect.load().then(() => {
-                    GameScene.instance.addToScene(treadEffect);
-                });
+                // Get the GameMap entity from GameScene
+                const canvas = GameScene.instance.gameEntities.find(
+                    (entity) => entity instanceof TreadsCanvas
+                ) as TreadsCanvas;
+
+                if (canvas) {
+                    canvas.drawTreads(this.mesh.position.clone(), this._rotation);
+                }
+
                 this._distanceSinceLastTread = 0;
             }
         }
     }
+
+
 
     public abstract update(deltaT: number): void;
 

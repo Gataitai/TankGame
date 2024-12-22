@@ -4,6 +4,7 @@ import Wall from "@/map/Wall.ts";
 import BreakableWall from "@/map/BreakableWall.ts";
 import GameScene from "@/scene/GameScene.ts";
 import ResourceManager from "@/utils/ResourceManager.ts";
+import TreadsCanvas from "@/map/TreadsCanvas.ts";
 
 class GameMap extends Entity {
     private readonly _mapSize: number;
@@ -28,14 +29,20 @@ class GameMap extends Entity {
             this.position.z
         );
 
+        // Create the treads canvas overlay
+        const treadsCanvas = new TreadsCanvas(this._mapSize, this.mesh.position);
+        await treadsCanvas.load();
+        GameScene.instance.addToScene(treadsCanvas);
+
+        // Create the walls and obstacles
         this.createBorder();
-        this.createObstacles(); // Add obstacles after the border is created
+        this.createObstacles();
     }
 
+    // Create map borders using walls
     private createBorder(): void {
         const edge = this._mapSize - 1;
 
-        // Seal off the top right corner
         GameScene.instance.addToScene(new Wall(new Vector3(edge, edge, 0.5)));
 
         for (let i = 0; i < edge; i++) {
@@ -46,6 +53,7 @@ class GameMap extends Entity {
         }
     }
 
+    // Generate obstacles on the map
     private createObstacles(): void {
         // Define obstacle patterns using 2D matrices
         const patterns = [
@@ -58,17 +66,17 @@ class GameMap extends Entity {
             ],
             [
                 [" ", "X", " ", "X", " "],
-                ["X", "X", " ", "X", "X"],
+                [" ", "X", " ", "X", " "],
                 [" ", " ", " ", " ", " "],
-                ["X", "X", " ", "X", "X"],
+                [" ", "X", " ", "X", " "],
                 [" ", "X", " ", "X", " "],
             ],
             [
-                [" ", " ", "X", " ", " "],
+                [" ", " ", " ", " ", " "],
                 [" ", "X", "X", "X", " "],
-                ["X", "X", " ", "X", "X"],
+                [" ", "X", " ", "X", " "],
                 [" ", "X", "X", "X", " "],
-                [" ", " ", "X", " ", " "],
+                [" ", " ", " ", " ", " "],
             ],
             [
                 [" ", " ", " ", " ", " "],
