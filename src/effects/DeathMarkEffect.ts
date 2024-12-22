@@ -1,33 +1,42 @@
 import Entity from "@/entities/Entity.ts";
-import { Mesh, PlaneGeometry, MeshStandardMaterial, Vector3 } from "three";
+import { Mesh, PlaneGeometry, MeshStandardMaterial, Vector3, DoubleSide, NormalBlending } from "three";
+import ResourceManager from "@/utils/ResourceManager.ts";
 
 class DeathMarkEffect extends Entity {
-
     constructor(position: Vector3) {
         super(position);
     }
 
     public async load(): Promise<void> {
-        // Create the material for the death mark
+        // Retrieve the texture from the ResourceManager
+        const deathMarkTexture = ResourceManager.instance.getTexture("death_mark_red");
+
+        if (!deathMarkTexture) {
+            console.warn("Death mark texture not found. Falling back to default material.");
+        } else {
+            // Premultiply alpha to avoid black outlines
+            deathMarkTexture.premultiplyAlpha = true;
+        }
+
+        // Create the material with transparency and smooth blending
         const material = new MeshStandardMaterial({
-            color: 0xffffff, // White color
-            transparent: true,
-            opacity: 0.8, // Slightly transparent for a subtle effect
+            map: deathMarkTexture,
+            transparent: true,       // Enable full transparency support
+            depthWrite: false,       // Avoid z-fighting
+            opacity: 1.0,            // Ensure core remains fully opaque
+            side: DoubleSide,        // Render both sides to prevent cut-off
+            blending: NormalBlending // Smooth blending for soft edges
         });
 
-        // Create the horizontal rectangle
-        const horizontalGeometry = new PlaneGeometry(1.0, 0.2); // Width: 1.0, Height: 0.2
-        const horizontalMesh = new Mesh(horizontalGeometry, material);
-        horizontalMesh.rotation.z = 0; // No rotation for horizontal rectangle
+        // Create the plane geometry for the death mark
+        const geometry = new PlaneGeometry(1, 1);
+        const mesh = new Mesh(geometry, material);
 
-        // Create the vertical rectangle
-        const verticalGeometry = new PlaneGeometry(0.2, 1.0); // Width: 0.2, Height: 1.0
-        const verticalMesh = new Mesh(verticalGeometry, material);
-        verticalMesh.rotation.z = Math.PI / 2; // Rotate 90 degrees for vertical rectangle
+        // Slightly raise the plane to avoid clipping with the ground
+        mesh.position.set(0, 0, 0.05);  // Raise it slightly above the ground
 
-        // Add both rectangles to this entity's mesh
-        this.mesh.add(horizontalMesh);
-        this.mesh.add(verticalMesh);
+        // Add the mesh to this entity
+        this.mesh.add(mesh);
     }
 }
 

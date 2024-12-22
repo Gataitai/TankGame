@@ -22,6 +22,12 @@ class InputManager {
     private _rightMouseUpCallback?: KeyCallback; // Right mouse
     private _wheelCallback?: WheelCallback;
 
+    // Joystick variables
+    private _joystickBase?: HTMLElement;
+    private _joystickHandle?: HTMLElement;
+    private _joystickActive = false;
+    private _joystickVector = new Vector2();
+
     private constructor() {
         window.addEventListener("keydown", this.handleDomKeyDown);
         window.addEventListener("keyup", this.handleDomKeyUp);
@@ -34,7 +40,19 @@ class InputManager {
             e.preventDefault();
         });
 
+        // Detect if the device is a phone or tablet
+        if (this.isMobileOrTablet()) {
+            this.setupJoystick();
+        }
     }
+
+    private isMobileOrTablet(): boolean {
+        return (
+            /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+            (window.innerWidth < 768)  // Optional: Screen width check for tablets/phones
+        );
+    }
+
 
     private handleDomKeyDown = (e: KeyboardEvent) => {
         const key = e.key.toLowerCase();
@@ -85,6 +103,106 @@ class InputManager {
             this._wheelCallback(this._wheelDelta);
         }
     };
+
+
+    // Joystick Setup
+    private setupJoystick(): void {
+        // Prevent duplicate joysticks
+        if (this._joystickBase || window.innerWidth >= 768) return;
+
+        // Create the joystick base and handle
+        this._joystickBase = document.createElement("div");
+        this._joystickHandle = document.createElement("div");
+
+        this._joystickBase.classList.add("joystick-base");
+        this._joystickHandle.classList.add("joystick-handle");
+
+        // Append the handle to the base
+        this._joystickBase.appendChild(this._joystickHandle);
+        document.body.appendChild(this._joystickBase);
+
+        // Attach touch event listeners
+        this._joystickBase.addEventListener("touchstart", this.startJoystick);
+        this._joystickBase.addEventListener("touchmove", this.moveJoystick);
+        this._joystickBase.addEventListener("touchend", this.endJoystick);
+    }
+
+    private startJoystick = (e: TouchEvent) => {
+        this._joystickActive = true;
+        this.updateJoystickPosition(e.touches[0]);
+    };
+
+    private moveJoystick = (e: TouchEvent) => {
+        if (this._joystickActive) {
+            this.updateJoystickPosition(e.touches[0]);
+            this.simulateKeyPressFromJoystick();
+        }
+    };
+
+    private endJoystick = () => {
+        this._joystickActive = false;
+        this._joystickVector.set(0, 0);
+        this.resetKeyStates();
+
+        if (this._joystickHandle) {
+            this._joystickHandle.style.transition = "transform 0.1s ease-out";
+            this._joystickHandle.style.transform = `translate(-50%, -50%)`;
+            setTimeout(() => this._joystickHandle!.style.transition = "", 100);
+        }
+    };
+
+    private updateJoystickPosition(touch: Touch) {
+        const rect = this._joystickBase!.getBoundingClientRect();
+        const dx = touch.clientX - rect.left - rect.width / 2;
+        const dy = touch.clientY - rect.top - rect.height / 2;
+
+        // Limit the handle's movement to within the joystick base's radius
+        const maxDistance = rect.width / 2;  // Half of the base's size
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Clamp the handle position to stay within the base circle
+        const clampedDistance = Math.min(distance, maxDistance);
+        const angle = Math.atan2(dy, dx);
+
+        const offsetX = Math.cos(angle) * clampedDistance;
+        const offsetY = Math.sin(angle) * clampedDistance;
+
+        // Move the joystick handle based on calculated offsets
+        this._joystickHandle!.style.transform = `translate(${offsetX}px, ${offsetY}px) translate(-50%, -50%)`;
+
+        // Normalize the joystick vector for directional input
+        this._joystickVector.set(offsetX / maxDistance, offsetY / maxDistance);
+    }
+
+    private simulateKeyPressFromJoystick(): void {
+        const threshold = 0.3;
+
+        this.resetKeyStates();  // Reset all keys before setting new ones
+
+        if (this._joystickVector.y < -threshold) this.simulateKeyDown("w");
+        if (this._joystickVector.y > threshold) this.simulateKeyDown("s");
+        if (this._joystickVector.x < -threshold) this.simulateKeyDown("a");
+        if (this._joystickVector.x > threshold) this.simulateKeyDown("d");
+    }
+
+    private simulateKeyDown(key: string): void {
+        // Simulate key press and trigger the associated callback
+        this._keys[key] = true;
+        const callback = this._keyDownCallbacks[key];
+        if (callback) {
+            callback();
+        }
+    }
+
+
+    private resetKeyStates(): void {
+        ["w", "a", "s", "d"].forEach((key) => {
+            this._keys[key] = false;
+            if (this._keyUpCallbacks[key]) {
+                this._keyUpCallbacks[key]!();
+            }
+        });
+    }
 
     public get mouseDown(): boolean {
         return this._mouseDown;

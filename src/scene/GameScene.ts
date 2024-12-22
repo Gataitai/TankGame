@@ -134,6 +134,7 @@ class GameScene {
         this.initializeEntities();
         this._lightingManager.setupLights(this._scene, this._entityManager, this._mapSize);
 
+
         // Load all entities
         for (let entity of this._entityManager.entities) {
             await entity.load();

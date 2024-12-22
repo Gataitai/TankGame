@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@types/node": "^22.9.0",
+    "nipplejs": "^0.10.2",
     "stats.js": "^0.17.0",
     "three": "^0.169.0",
     "vite-plugin-wasm": "^3.3.0"

@@ -16,7 +16,7 @@ class GameMap extends Entity {
 
     public async load(): Promise<void> {
         const groundTexture = ResourceManager.instance.getTexture("ground");
-        const geometry = new PlaneGeometry(40, 33);
+        const geometry = new PlaneGeometry(44, 33);
         const material = new MeshStandardMaterial({
             map: groundTexture,
         });

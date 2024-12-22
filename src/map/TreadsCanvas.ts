@@ -48,7 +48,7 @@ class TreadsCanvas extends Entity {
         const y = (position.y * this._scaleFactor) - (this._canvas.height / this._size / 2);
 
         const treadWidth = 25;
-        const treadHeight = 12.5;
+        const treadHeight = 10;
         const cornerRadius = 4;
 
         ctx.save();

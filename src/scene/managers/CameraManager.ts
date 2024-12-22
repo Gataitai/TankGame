@@ -63,6 +63,7 @@ class CameraController {
         }
     }
 
+
     public setCameraStrategy(strategy: CameraStrategy, renderer: WebGLRenderer, mapSize: number): void {
         this._cameraStrategy = strategy;
         this.setupCamera(renderer, mapSize);

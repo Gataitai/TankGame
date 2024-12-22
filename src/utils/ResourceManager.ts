@@ -28,6 +28,7 @@ class ResourceManager {
         await this.loadWallTextures(textureLoader);
         await this.loadGroundTexture(textureLoader);
         await this.loadTankTextures(textureLoader);
+        await this.loadDeathMarkTextures(textureLoader);
         await this.loadModels();
     };
 
@@ -40,32 +41,43 @@ class ResourceManager {
 
     private loadTankTextures = async (textureLoader: TextureLoader) => {
         // Player tank
-        const tankTexture = await textureLoader.loadAsync("textures/tank_texture_blue.PNG");
+        const tankTexture = await textureLoader.loadAsync("textures/tank_texture_blue.png");
 
         // Add to the game resources
         this._textures.set("tank_blue", tankTexture);
     };
 
+    private loadDeathMarkTextures = async (textureLoader: TextureLoader) => {
+        const redDeathMark = await textureLoader.loadAsync("textures/death_mark0.png");
+        const whiteDeathMark = await textureLoader.loadAsync("textures/death_mark1.png");
+        const blueDeathMark = await textureLoader.loadAsync("textures/death_mark2.png");
+
+        this._textures.set("death_mark_red", redDeathMark);
+        this._textures.set("death_mark_white", whiteDeathMark);
+        this._textures.set("death_mark_blue", blueDeathMark);
+
+    }
+
     private loadGroundTexture = async (textureLoader: TextureLoader) => {
         // Load the ground texture
-        const groundTexture = await textureLoader.loadAsync("textures/ground.PNG");
+        const groundTexture = await textureLoader.loadAsync("textures/ground.png");
         this._textures.set("ground", groundTexture);
     };
 
     private loadBreakableWallTexture = async (textureLoader: TextureLoader) => {
-        // Load the breakable wall texture (wall0.PNG)
-        const breakableWallTexture = await textureLoader.loadAsync("textures/wall0.PNG");
+        // Load the breakable wall texture (wall0.png)
+        const breakableWallTexture = await textureLoader.loadAsync("textures/wall0.png");
         this._textures.set("breakable-wall", breakableWallTexture);
     };
 
     private loadWallTextures = async (textureLoader: TextureLoader) => {
         const wallTextureFiles = [
-            "wall1.PNG",
-            "wall2.PNG",
-            "wall3.PNG",
-            "wall4.PNG",
-            "wall5.PNG",
-            "wall6.PNG",
+            "wall1.png",
+            "wall2.png",
+            "wall3.png",
+            "wall4.png",
+            "wall5.png",
+            "wall6.png",
         ];
 
         // Load the wall textures

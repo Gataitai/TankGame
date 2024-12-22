@@ -1,11 +1,11 @@
 import {Box3, Sphere, Vector3} from "three";
 import Projectile from "@/entities/weapons/Projectile.ts";
 import GameScene from "@/scene/GameScene.ts";
-import Tank from "@/entities/tanks/Tank.ts";
 import FireEffect from "@/effects/FireEffect.ts";
 import Entity from "@/entities/Entity.ts";
 import projectile from "@/entities/weapons/Projectile.ts";
 import Landmine from "@/entities/weapons/Landmine.ts";
+import EnemyTank from "@/entities/tanks/EnemyTank.ts";
 
 
 class Bullet extends Projectile {
@@ -56,7 +56,7 @@ class Bullet extends Projectile {
             // }
 
             // Destroy PlayerTank or other tanks on impact
-            if (collider instanceof Tank) {
+            if (collider instanceof EnemyTank) {
                 collider.destroy();
                 this.explodeAndDispose();
                 GameScene.instance.shakeCamera(0.3, 0.1);

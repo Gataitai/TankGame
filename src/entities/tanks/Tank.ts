@@ -4,6 +4,7 @@ import ResourceManager from "@/utils/ResourceManager.ts";
 import GameScene from "@/scene/GameScene.ts";
 import ExplosionEffect from "@/effects/ExplosionEffect.ts";
 import TreadsCanvas from "@/map/TreadsCanvas.ts";
+import DeathMarkEffect from "@/effects/DeathMarkEffect.ts";
 
 abstract class Tank extends UpdatableEntity {
     protected _rotation: number = 0;
@@ -92,6 +93,10 @@ abstract class Tank extends UpdatableEntity {
     public destroy(): void {
         this.shouldDispose = true;
         const explosion = new ExplosionEffect(this.mesh.position, 2);
+        const deathMarkEffect = new DeathMarkEffect(this.mesh.position)
+        deathMarkEffect.load().then(() => {
+            GameScene.instance.addToScene(deathMarkEffect);
+        })
         explosion.load().then(() => {
             GameScene.instance.addToScene(explosion);
         });
