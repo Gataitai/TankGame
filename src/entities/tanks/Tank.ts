@@ -5,12 +5,13 @@ import GameScene from "@/scene/GameScene.ts";
 import ExplosionEffect from "@/effects/ExplosionEffect.ts";
 import TreadsCanvas from "@/map/TreadsCanvas.ts";
 import DeathMarkEffect from "@/effects/DeathMarkEffect.ts";
+import Landmine from "@/entities/weapons/Landmine.ts";
 
 abstract class Tank extends UpdatableEntity {
     protected _rotation: number = 0;
     protected _tankTurretMesh!: Mesh;
 
-    protected _moveSpeed: number; // Store movement speed here
+    protected readonly _moveSpeed: number; // Store movement speed here
 
     // Distance-based tread spawning
     private _distanceSinceLastTread: number = 0;
@@ -66,7 +67,7 @@ abstract class Tank extends UpdatableEntity {
         this.collider = collider;
     }
 
-    protected spawnTreads(movement: Vector3): void {
+    private spawnTreads(movement: Vector3): void {
         const distanceTraveled = movement.length();
         if (distanceTraveled > 0) {
             this._distanceSinceLastTread += distanceTraveled;
@@ -86,7 +87,27 @@ abstract class Tank extends UpdatableEntity {
         }
     }
 
+    //collision detection
+    protected canMove(movement: Vector3): boolean {
+        const testingSphere = (this.collider as Sphere).clone();
+        testingSphere.center.add(movement);
 
+        const colliders = GameScene.instance.gameEntities.filter(
+            (e) =>
+                e !== this &&
+                e.collider &&
+                e.collider!.intersectsSphere(testingSphere) &&
+                !(e instanceof Landmine)
+        );
+
+        return colliders.length === 0;
+    }
+
+    protected applyMovement(movement: Vector3): void {
+        this.mesh.position.add(movement);
+        (this.collider as Sphere).center.add(movement);
+        this.spawnTreads(movement); // Distance-based tread spawning
+    }
 
     public abstract update(deltaT: number): void;
 

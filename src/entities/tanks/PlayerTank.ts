@@ -1,12 +1,11 @@
 import Tank from "@/entities/tanks/Tank.ts";
-import { Plane, Raycaster, Sphere, Vector2, Vector3 } from "three";
+import { Plane, Raycaster, Vector2, Vector3 } from "three";
 import GameScene from "@/scene/GameScene.ts";
 import BulletShooter from "@/entities/tanks/weaponStrategies/BulletShooter.ts";
 import WeaponStrategy from "@/entities/tanks/weaponStrategies/WeaponStrategy.ts";
 import MissileShooter from "@/entities/tanks/weaponStrategies/MissileShooter.ts";
 import InputManager from "@/scene/managers/InputManager.ts";
 import LandminePlacer from "@/entities/tanks/weaponStrategies/LandminePlacer.ts";
-import Landmine from "@/entities/weapons/Landmine.ts";
 
 type KeyboardState = {
     W: boolean;
@@ -164,27 +163,6 @@ class PlayerTank extends Tank {
             turretLocalRotation += Math.PI * 2;
         }
         this._tankTurretMesh.rotation.z = turretLocalRotation;
-    }
-
-    private canMove(movement: Vector3): boolean {
-        const testingSphere = (this.collider as Sphere).clone();
-        testingSphere.center.add(movement);
-
-        const colliders = GameScene.instance.gameEntities.filter(
-            (e) =>
-                e !== this &&
-                e.collider &&
-                e.collider!.intersectsSphere(testingSphere) &&
-                !(e instanceof Landmine)
-        );
-
-        return colliders.length === 0;
-    }
-
-    private applyMovement(movement: Vector3): void {
-        this.mesh.position.add(movement);
-        (this.collider as Sphere).center.add(movement);
-        this.spawnTreads(movement); // Distance-based tread spawning
     }
 
     public dispose(): void {
