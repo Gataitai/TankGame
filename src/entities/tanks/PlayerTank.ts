@@ -15,7 +15,6 @@ type KeyboardState = {
 };
 
 class PlayerTank extends Tank {
-    private _turretRotation: number = 0;
     private _weaponStrategy: WeaponStrategy;
     private _bulletShooter: BulletShooter = new BulletShooter();
     private _missileShooter: MissileShooter = new MissileShooter();

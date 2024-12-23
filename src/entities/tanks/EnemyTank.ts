@@ -50,8 +50,8 @@ class EnemyTank extends Tank {
         }
     }
 
-
     private patrol(deltaT: number): void {
+        this.resetTurretRotation(deltaT);
         if (this._waitingToMove && this.rotateToTarget(this._nextRotation, deltaT)) return;
 
         const movement = this.calculateMovement(deltaT);
@@ -75,9 +75,46 @@ class EnemyTank extends Tank {
         // Rotate the body towards the target
         this.rotateToTarget(this._nextRotation, deltaT);
 
+        // Update turret to smoothly rotate towards player
+        this.updateTurretRotation(target);
+
         const movement = this.calculateMovement(deltaT);
         if (this.canMove(movement)) {
             this.applyMovement(movement);
+        }
+    }
+
+    // Smoothly rotates the turret towards the player
+    private updateTurretRotation(target: Vector3): void {
+        const direction = target.clone().sub(this.mesh.position);
+        const desiredTurretAngle = Math.atan2(direction.x, -direction.y);
+
+        // Calculate local turret rotation relative to body
+        let turretLocalRotation = desiredTurretAngle - this._rotation;
+
+        if (turretLocalRotation > Math.PI) {
+            turretLocalRotation -= Math.PI * 2;
+        } else if (turretLocalRotation < -Math.PI) {
+            turretLocalRotation += Math.PI * 2;
+        }
+
+        // Apply rotation to turret mesh
+        this._turretRotation = desiredTurretAngle;
+        this._tankTurretMesh.rotation.z = turretLocalRotation;
+    }
+
+    // Reset turret to face forward when patrolling
+    private resetTurretRotation(deltaT: number): void {
+        const rotationSpeed = Math.PI;  // Adjust this for smoother/faster return
+        const angleDiff = Math.atan2(
+            Math.sin(-this._tankTurretMesh.rotation.z),
+            Math.cos(-this._tankTurretMesh.rotation.z)
+        );
+
+        if (Math.abs(angleDiff) > 0.01) {
+            this._tankTurretMesh.rotation.z += Math.sign(angleDiff) * Math.min(rotationSpeed * deltaT, Math.abs(angleDiff));
+        } else {
+            this._tankTurretMesh.rotation.z = 0;  // Snap to 0 if very close
         }
     }
 
@@ -119,6 +156,7 @@ class EnemyTank extends Tank {
         return false;
     }
 
+    //method to give each tank an initial random direction.
     private randomDesiredDirection(): number {
         const angles = Array.from({ length: 8 }, (_, i) => (i * Math.PI) / 4);
         return angles[Math.floor(Math.random() * angles.length)];

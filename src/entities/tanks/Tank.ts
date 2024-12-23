@@ -9,6 +9,7 @@ import Landmine from "@/entities/weapons/Landmine.ts";
 
 abstract class Tank extends UpdatableEntity {
     protected _rotation: number = 0;
+    protected _turretRotation: number = 0;
     protected _tankTurretMesh!: Mesh;
 
     protected readonly _moveSpeed: number; // Store movement speed here
