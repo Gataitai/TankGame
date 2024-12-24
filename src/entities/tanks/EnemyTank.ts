@@ -2,24 +2,34 @@ import Tank from "@/entities/tanks/Tank.ts";
 import {Vector3} from "three";
 import GameScene from "@/scene/GameScene.ts";
 import PlayerTank from "@/entities/tanks/PlayerTank.ts";
+import WeaponStrategy from "@/entities/tanks/weaponStrategies/WeaponStrategy.ts";
+import BulletShooter from "@/entities/tanks/weaponStrategies/BulletShooter.ts";
 
 enum TankState {
     PATROLLING,
     CHASING,
+    ATTACKING
 }
 
 class EnemyTank extends Tank {
     private _state = TankState.PATROLLING;
     private _nextRotation = this.randomDesiredDirection();
     private _waitingToMove = false;
+    private readonly _attackCooldown = .5; // 2 seconds cooldown
     private _timeSinceDirectionChange = 0;
+    private _timeSinceLastShot = this._attackCooldown;
     private readonly _directionChangeInterval = 1;
-    private readonly _detectionRadius = 10;
+    private readonly _detectionRadius = 15;
+    private readonly _attackRadius = 3;
+    private _weaponStrategy: WeaponStrategy;
+    private _bulletShooter: BulletShooter = new BulletShooter();
+
 
     constructor(position: Vector3, speed = 3) {
         super(position, speed);
         this._rotation = this._nextRotation;
         this.mesh.rotation.z = this._rotation;
+        this._weaponStrategy = this._bulletShooter;
     }
 
     public update(deltaT: number): void {
@@ -34,21 +44,36 @@ class EnemyTank extends Tank {
                 this.patrol(deltaT);
                 break;
             case TankState.CHASING:
+                this.attack(deltaT);
                 this.chase(deltaT);
+                break;
+            case TankState.ATTACKING:
+                this.attack(deltaT);
                 break;
         }
     }
 
     private updateState(): void {
         const playerPosition = this.getPlayerPosition();
+
+        // If playerPosition is Vector3(0, 0, 0), assume player is dead or not found
+        if (playerPosition.equals(new Vector3(0, 0, 0))) {
+            this._state = TankState.PATROLLING;
+            return;
+        }
+
         const distanceToPlayer = playerPosition.distanceTo(this.mesh.position);
 
-        if (distanceToPlayer < this._detectionRadius) {
+        if (distanceToPlayer < this._attackRadius) {
+            this._state = TankState.ATTACKING;
+        } else if (distanceToPlayer < this._detectionRadius) {
+            console.log(distanceToPlayer)
             this._state = TankState.CHASING;
         } else {
             this._state = TankState.PATROLLING;
         }
     }
+
 
     private patrol(deltaT: number): void {
         this.resetTurretRotation(deltaT);
@@ -69,7 +94,7 @@ class EnemyTank extends Tank {
     }
 
     private chase(deltaT: number): void {
-        const target = this.getPlayerPosition()
+        const target = this.getPlayerPosition();
         this._nextRotation = this.calculateAngleToTarget(target);
 
         // Rotate the body towards the target
@@ -82,6 +107,31 @@ class EnemyTank extends Tank {
         if (this.canMove(movement)) {
             this.applyMovement(movement);
         }
+    }
+
+    private attack(deltaT: number): void {
+        const target = this.getPlayerPosition();
+        this.updateTurretRotation(target);
+
+        // Accumulate time since last shot
+        this._timeSinceLastShot += deltaT;
+
+        // Shoot only if cooldown period has passed
+        if (this._timeSinceLastShot >= this._attackCooldown) {
+            this.shoot();
+            this._timeSinceLastShot = 0;  // Reset cooldown timer
+        }
+    }
+
+    private shoot(): void {
+        const spawnDistance = 1;
+        const offset = new Vector3(
+            Math.sin(this._turretRotation) * spawnDistance,
+            -Math.cos(this._turretRotation) * spawnDistance,
+            0.5
+        );
+        const shootingPosition = this.mesh.position.clone().add(offset);
+        this._weaponStrategy.spawn(shootingPosition, this._turretRotation);
     }
 
     // Smoothly rotates the turret towards the player

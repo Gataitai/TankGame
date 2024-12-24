@@ -28,7 +28,7 @@ class PlayerTank extends Tank {
         D: false,
     };
 
-    constructor(position: Vector3, speed: number = 10) {
+    constructor(position: Vector3, speed: number = 3.5) {
         super(position, speed);
         this._weaponStrategy = this._bulletShooter; // Default is bullet shooter for left click
 
