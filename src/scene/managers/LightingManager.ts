@@ -6,12 +6,12 @@ import LightIndicator from "@/entities/lights/LightIndicator.ts";
 // Extended palette (without # symbols)
 const colorPalettes = [
     [
-        "FF8383",  // Color 1
-        "FFF574",  // Color 2
-        "A1D6CB",  // Color 3
-        "A19AD3",  // Color 4
-        "FF8383",  // Repeated Color 1
-        "A1D6CB"   // Repeated Color 3
+        "ff00ae",  // high right
+        "ffd6da",  // Color 2
+        "00d0ff",  // high left ff00ae
+        "ffd6da",  // Color 4
+        "413696",  // Repeated Color 1
+        "94348a"   // Repeated Color 3
     ]
 ];
 
@@ -24,7 +24,7 @@ class LightingManager {
         const lightColors = baseColors.map(color => parseInt(color, 16));
 
         const lights = lightColors.map(
-            color => new DirectionalLight(color, Math.random() * 1.5 + 0.5)
+            color => new DirectionalLight(color, 1)
         );
 
         const lightPositions = [

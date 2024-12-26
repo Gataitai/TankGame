@@ -40,6 +40,7 @@
         }
 
         public abstract load(): Promise<void>;
+
         public dispose(): void {
             // Dispose all child meshes' geometries and materials
             this._mesh.traverse((child) => {
