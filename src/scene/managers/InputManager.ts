@@ -22,6 +22,10 @@ class InputManager {
     private _rightMouseUpCallback?: KeyCallback; // Right mouse
     private _wheelCallback?: WheelCallback;
 
+    private _mouseDelta = new Vector2(0, 0);  // Add mouse delta property
+
+    private _previousMousePosition = new Vector2(0, 0);  // Track previous position for delta calculation
+
     // Joystick variables
     private _joystickBase?: HTMLElement;
     private _joystickHandle?: HTMLElement;
@@ -95,6 +99,15 @@ class InputManager {
         const rect = canvas.getBoundingClientRect();
         this._mousePosition.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         this._mousePosition.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        // Calculate mouse delta
+        this._mouseDelta.set(
+            event.movementX || event.clientX - this._previousMousePosition.x,
+            event.movementY || event.clientY - this._previousMousePosition.y
+        );
+
+        // Store current position for the next frame
+        this._previousMousePosition.set(event.clientX, event.clientY);
     };
 
     private handleDomWheelEvent = (event: WheelEvent) => {
@@ -210,6 +223,10 @@ class InputManager {
 
     public get mousePosition(): Vector2 {
         return this._mousePosition;
+    }
+
+    public get mouseDelta(): Vector2 {
+        return this._mouseDelta;
     }
 
     public resetWheelDelta() {

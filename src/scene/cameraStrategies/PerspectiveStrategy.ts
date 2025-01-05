@@ -15,6 +15,7 @@ class PerspectiveStrategy implements CameraStrategy {
         const controls = new OrbitControls(camera, renderer.domElement);
 
         // Disable right-click panning
+        // Disable right-click panning
         controls.enablePan = false;
 
         // Restrict vertical rotation to prevent flipping

@@ -26,6 +26,10 @@ class CameraController {
         return this._camera;
     }
 
+    public get cameraStrategy() {
+        return this._cameraStrategy;
+    }
+
     public shakeCamera(duration: number, intensity: number = 0.5): void {
         this._shakeDuration = duration;
         this._shakeIntensity = intensity;
@@ -62,7 +66,6 @@ class CameraController {
             this._camera.updateProjectionMatrix();
         }
     }
-
 
     public setCameraStrategy(strategy: CameraStrategy, renderer: WebGLRenderer, mapSize: number): void {
         this._cameraStrategy = strategy;

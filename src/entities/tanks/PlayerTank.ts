@@ -20,6 +20,7 @@ class PlayerTank extends Tank {
     private _missileShooter: MissileShooter = new MissileShooter();
     private _minePlacer: LandminePlacer = new LandminePlacer();
     private _currentTargetAngle: number | null = null;
+    private _firstPerson: boolean = false;
 
     private _keyboardState: KeyboardState = {
         W: false,
@@ -67,6 +68,19 @@ class PlayerTank extends Tank {
             }
             input.resetWheelDelta();
         });
+    }
+
+    public toggleFirstPersonMode(): void {
+        this._firstPerson = !this._firstPerson;
+        console.log(`First-person mode: ${this._firstPerson}`);
+
+        if (this._firstPerson) {
+            document.body.requestPointerLock().catch((err) => {
+                console.error("Failed to lock pointer:", err);
+            });
+        } else {
+            document.exitPointerLock();
+        }
     }
 
     private shoot(): void {

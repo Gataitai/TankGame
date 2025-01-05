@@ -23,6 +23,10 @@ abstract class Tank extends UpdatableEntity {
         this._moveSpeed = moveSpeed;
     }
 
+    public get turretRotation(): number {
+        return this._turretRotation;
+    }
+
     public async load(): Promise<void> {
         const tankModel = ResourceManager.instance.getModel("player");
         if (!tankModel) {
