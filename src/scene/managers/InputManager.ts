@@ -1,140 +1,173 @@
-// InputManager.ts (Revised)
 import { Vector2 } from "three";
 
-type KeyCallback = () => void;
-type WheelCallback = (deltaY: number) => void;
+type Listener = () => void;
+type WheelListener = (deltaY: number) => void;
+export type Unsubscribe = () => void;
 
+const JOYSTICK_KEYS = ["KeyW", "KeyA", "KeyS", "KeyD"] as const;
+
+/**
+ * Central keyboard / mouse / touch input.
+ *
+ * Keys are identified by KeyboardEvent.code ("KeyW", "Digit1", ...), which refers to the
+ * physical key, so WASD works on AZERTY and other layouts too.
+ * Every `on...` method supports multiple listeners and returns an unsubscribe function.
+ */
 class InputManager {
     private static _instance = new InputManager();
     public static get instance() {
         return this._instance;
     }
 
-    private _keys: { [key: string]: boolean } = {};
+    private _pressed = new Set<string>();
     private _mouseDown = false;
     private _mousePosition = new Vector2();
-    private _wheelDelta = 0;
+    private _target: HTMLElement | null = null;
 
-    // Single callbacks instead of arrays
-    private _keyDownCallbacks: { [key: string]: KeyCallback | undefined } = {};
-    private _keyUpCallbacks: { [key: string]: KeyCallback | undefined } = {};
-    private _mouseUpCallback?: KeyCallback;
-    private _rightMouseUpCallback?: KeyCallback; // Right mouse
-    private _wheelCallback?: WheelCallback;
+    private _keyDownListeners = new Map<string, Set<Listener>>();
+    private _keyUpListeners = new Map<string, Set<Listener>>();
+    private _mouseUpListeners = new Set<Listener>();
+    private _rightMouseUpListeners = new Set<Listener>();
+    private _wheelListeners = new Set<WheelListener>();
 
-    private _mouseDelta = new Vector2(0, 0);  // Add mouse delta property
-
-    private _previousMousePosition = new Vector2(0, 0);  // Track previous position for delta calculation
-
-    // Joystick variables
+    // Touch joystick
     private _joystickBase?: HTMLElement;
     private _joystickHandle?: HTMLElement;
     private _joystickActive = false;
     private _joystickVector = new Vector2();
 
     private constructor() {
-        window.addEventListener("keydown", this.handleDomKeyDown);
-        window.addEventListener("keyup", this.handleDomKeyUp);
-        window.addEventListener("mousedown", this.handleDomMouseDownEvent);
-        window.addEventListener("mouseup", this.handleDomMouseUpEvent);
-        window.addEventListener("mousemove", this.handleDomMouseMoveEvent);
-        window.addEventListener("wheel", this.handleDomWheelEvent);
+        window.addEventListener("keydown", this.handleKeyDown);
+        window.addEventListener("keyup", this.handleKeyUp);
+        window.addEventListener("blur", this.handleBlur);
+        window.addEventListener("mousedown", this.handleMouseDown);
+        window.addEventListener("mouseup", this.handleMouseUp);
+        window.addEventListener("mousemove", this.handleMouseMove);
+        window.addEventListener("wheel", this.handleWheel);
+        window.addEventListener("contextmenu", this.preventContextMenu);
 
-        window.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-        });
-
-        // Detect if the device is a phone or tablet
         if (this.isMobileOrTablet()) {
             this.setupJoystick();
         }
     }
 
-    private isMobileOrTablet(): boolean {
-        return (
-            /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-            (window.innerWidth < 768)  // Optional: Screen width check for tablets/phones
-        );
+    /** Mouse coordinates are reported relative to this element (the game canvas). */
+    public attach(element: HTMLElement): void {
+        this._target = element;
     }
 
+    // ---- Queries -------------------------------------------------------------------------
 
-    private handleDomKeyDown = (e: KeyboardEvent) => {
-        const key = e.key.toLowerCase();
-        this._keys[key] = true;
-        const callback = this._keyDownCallbacks[key];
-        if (callback) {
-            callback();
-        }
+    public isKeyDown(code: string): boolean {
+        return this._pressed.has(code);
+    }
+
+    public get mouseDown(): boolean {
+        return this._mouseDown;
+    }
+
+    /** Mouse position in normalised device coordinates (-1..1) relative to the attached element. */
+    public get mousePosition(): Vector2 {
+        return this._mousePosition;
+    }
+
+    // ---- Subscriptions -------------------------------------------------------------------
+
+    public onKeyDown(code: string, listener: Listener): Unsubscribe {
+        return InputManager.subscribe(InputManager.listenersFor(this._keyDownListeners, code), listener);
+    }
+
+    public onKeyUp(code: string, listener: Listener): Unsubscribe {
+        return InputManager.subscribe(InputManager.listenersFor(this._keyUpListeners, code), listener);
+    }
+
+    public onMouseUp(listener: Listener): Unsubscribe {
+        return InputManager.subscribe(this._mouseUpListeners, listener);
+    }
+
+    public onRightMouseUp(listener: Listener): Unsubscribe {
+        return InputManager.subscribe(this._rightMouseUpListeners, listener);
+    }
+
+    public onWheel(listener: WheelListener): Unsubscribe {
+        return InputManager.subscribe(this._wheelListeners, listener);
+    }
+
+    public dispose(): void {
+        window.removeEventListener("keydown", this.handleKeyDown);
+        window.removeEventListener("keyup", this.handleKeyUp);
+        window.removeEventListener("blur", this.handleBlur);
+        window.removeEventListener("mousedown", this.handleMouseDown);
+        window.removeEventListener("mouseup", this.handleMouseUp);
+        window.removeEventListener("mousemove", this.handleMouseMove);
+        window.removeEventListener("wheel", this.handleWheel);
+        window.removeEventListener("contextmenu", this.preventContextMenu);
+        this._joystickBase?.remove();
+    }
+
+    // ---- DOM handlers --------------------------------------------------------------------
+
+    private handleKeyDown = (e: KeyboardEvent) => {
+        this._pressed.add(e.code);
+        // Ignore auto-repeat so toggles (like the camera key) don't flicker when held.
+        if (!e.repeat) InputManager.emit(this._keyDownListeners.get(e.code));
     };
 
-    private handleDomKeyUp = (e: KeyboardEvent) => {
-        const key = e.key.toLowerCase();
-        this._keys[key] = false;
-        const callback = this._keyUpCallbacks[key];
-        if (callback) {
-            callback();
-        }
+    private handleKeyUp = (e: KeyboardEvent) => {
+        this._pressed.delete(e.code);
+        InputManager.emit(this._keyUpListeners.get(e.code));
     };
 
-    private handleDomMouseDownEvent = (e: MouseEvent) => {
-        if (e.button === 0) {
-            this._mouseDown = true;
-        }
+    /** Keys released while the window is unfocused never send keyup, so forget them. */
+    private handleBlur = () => {
+        this._pressed.clear();
+        this._mouseDown = false;
     };
 
-    private handleDomMouseUpEvent = (e: MouseEvent) => {
+    private handleMouseDown = (e: MouseEvent) => {
+        if (e.button === 0) this._mouseDown = true;
+    };
+
+    private handleMouseUp = (e: MouseEvent) => {
         if (e.button === 0) {
             this._mouseDown = false;
-            if (this._mouseUpCallback) this._mouseUpCallback();
+            InputManager.emit(this._mouseUpListeners);
         } else if (e.button === 2) {
-            // Right mouse up
-            if (this._rightMouseUpCallback) this._rightMouseUpCallback();
+            InputManager.emit(this._rightMouseUpListeners);
         }
     };
 
-    private handleDomMouseMoveEvent = (event: MouseEvent) => {
-        const canvas = document.querySelector<HTMLCanvasElement>("#app canvas");
-        if (!canvas) return;
-
-        const rect = canvas.getBoundingClientRect();
-        this._mousePosition.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        this._mousePosition.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-        // Calculate mouse delta
-        this._mouseDelta.set(
-            event.movementX || event.clientX - this._previousMousePosition.x,
-            event.movementY || event.clientY - this._previousMousePosition.y
+    private handleMouseMove = (e: MouseEvent) => {
+        const rect = (this._target ?? document.documentElement).getBoundingClientRect();
+        this._mousePosition.set(
+            ((e.clientX - rect.left) / rect.width) * 2 - 1,
+            -((e.clientY - rect.top) / rect.height) * 2 + 1
         );
-
-        // Store current position for the next frame
-        this._previousMousePosition.set(event.clientX, event.clientY);
     };
 
-    private handleDomWheelEvent = (event: WheelEvent) => {
-        this._wheelDelta = event.deltaY;
-        if (this._wheelCallback) {
-            this._wheelCallback(this._wheelDelta);
-        }
+    private handleWheel = (e: WheelEvent) => {
+        for (const listener of [...this._wheelListeners]) listener(e.deltaY);
     };
 
+    private preventContextMenu = (e: Event) => e.preventDefault();
 
-    // Joystick Setup
+    // ---- Touch joystick (simulates WASD) -------------------------------------------------
+
+    private isMobileOrTablet(): boolean {
+        return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+            || window.innerWidth < 768;
+    }
+
     private setupJoystick(): void {
-        // Prevent duplicate joysticks
-        if (this._joystickBase || window.innerWidth >= 768) return;
+        if (this._joystickBase) return;
 
-        // Create the joystick base and handle
         this._joystickBase = document.createElement("div");
         this._joystickHandle = document.createElement("div");
-
         this._joystickBase.classList.add("joystick-base");
         this._joystickHandle.classList.add("joystick-handle");
-
-        // Append the handle to the base
         this._joystickBase.appendChild(this._joystickHandle);
         document.body.appendChild(this._joystickBase);
 
-        // Attach touch event listeners
         this._joystickBase.addEventListener("touchstart", this.startJoystick);
         this._joystickBase.addEventListener("touchmove", this.moveJoystick);
         this._joystickBase.addEventListener("touchend", this.endJoystick);
@@ -142,157 +175,75 @@ class InputManager {
 
     private startJoystick = (e: TouchEvent) => {
         this._joystickActive = true;
-        this.updateJoystickPosition(e.touches[0]);
+        this.updateJoystick(e.touches[0]);
     };
 
     private moveJoystick = (e: TouchEvent) => {
-        if (this._joystickActive) {
-            this.updateJoystickPosition(e.touches[0]);
-            this.simulateKeyPressFromJoystick();
-        }
+        if (this._joystickActive) this.updateJoystick(e.touches[0]);
     };
 
     private endJoystick = () => {
         this._joystickActive = false;
         this._joystickVector.set(0, 0);
-        this.resetKeyStates();
+        this.applyJoystickKeys();
 
-        if (this._joystickHandle) {
-            this._joystickHandle.style.transition = "transform 0.1s ease-out";
-            this._joystickHandle.style.transform = `translate(-50%, -50%)`;
-            setTimeout(() => this._joystickHandle!.style.transition = "", 100);
+        const handle = this._joystickHandle;
+        if (handle) {
+            handle.style.transition = "transform 0.1s ease-out";
+            handle.style.transform = "translate(-50%, -50%)";
+            setTimeout(() => (handle.style.transition = ""), 100);
         }
     };
 
-    private updateJoystickPosition(touch: Touch) {
+    private updateJoystick(touch: Touch): void {
         const rect = this._joystickBase!.getBoundingClientRect();
         const dx = touch.clientX - rect.left - rect.width / 2;
         const dy = touch.clientY - rect.top - rect.height / 2;
 
-        // Limit the handle's movement to within the joystick base's radius
-        const maxDistance = rect.width / 2;  // Half of the base's size
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        // Clamp the handle position to stay within the base circle
-        const clampedDistance = Math.min(distance, maxDistance);
+        // Keep the handle inside the base circle
+        const maxDistance = rect.width / 2;
+        const distance = Math.min(Math.hypot(dx, dy), maxDistance);
         const angle = Math.atan2(dy, dx);
+        const offsetX = Math.cos(angle) * distance;
+        const offsetY = Math.sin(angle) * distance;
 
-        const offsetX = Math.cos(angle) * clampedDistance;
-        const offsetY = Math.sin(angle) * clampedDistance;
-
-        // Move the joystick handle based on calculated offsets
         this._joystickHandle!.style.transform = `translate(${offsetX}px, ${offsetY}px) translate(-50%, -50%)`;
-
-        // Normalize the joystick vector for directional input
         this._joystickVector.set(offsetX / maxDistance, offsetY / maxDistance);
+        this.applyJoystickKeys();
     }
 
-    private simulateKeyPressFromJoystick(): void {
+    private applyJoystickKeys(): void {
         const threshold = 0.3;
-
-        this.resetKeyStates();  // Reset all keys before setting new ones
-
-        if (this._joystickVector.y < -threshold) this.simulateKeyDown("w");
-        if (this._joystickVector.y > threshold) this.simulateKeyDown("s");
-        if (this._joystickVector.x < -threshold) this.simulateKeyDown("a");
-        if (this._joystickVector.x > threshold) this.simulateKeyDown("d");
+        const v = this._joystickVector;
+        JOYSTICK_KEYS.forEach((key) => this._pressed.delete(key));
+        if (v.y < -threshold) this._pressed.add("KeyW");
+        if (v.y > threshold) this._pressed.add("KeyS");
+        if (v.x < -threshold) this._pressed.add("KeyA");
+        if (v.x > threshold) this._pressed.add("KeyD");
     }
 
-    private simulateKeyDown(key: string): void {
-        // Simulate key press and trigger the associated callback
-        this._keys[key] = true;
-        const callback = this._keyDownCallbacks[key];
-        if (callback) {
-            callback();
+    // ---- Helpers -------------------------------------------------------------------------
+
+    private static listenersFor(map: Map<string, Set<Listener>>, code: string): Set<Listener> {
+        let set = map.get(code);
+        if (!set) {
+            set = new Set();
+            map.set(code, set);
         }
+        return set;
     }
 
-
-    private resetKeyStates(): void {
-        ["w", "a", "s", "d"].forEach((key) => {
-            this._keys[key] = false;
-            if (this._keyUpCallbacks[key]) {
-                this._keyUpCallbacks[key]!();
-            }
-        });
+    private static subscribe<T>(set: Set<T>, listener: T): Unsubscribe {
+        set.add(listener);
+        return () => {
+            set.delete(listener);
+        };
     }
 
-    public get mouseDown(): boolean {
-        return this._mouseDown;
-    }
-
-    public get mousePosition(): Vector2 {
-        return this._mousePosition;
-    }
-
-    public get mouseDelta(): Vector2 {
-        return this._mouseDelta;
-    }
-
-    public resetWheelDelta() {
-        this._wheelDelta = 0;
-    }
-
-    // Set or overwrite the keypress callback for a given key
-    public onKeyPress(key: string, callback: KeyCallback): void {
-        const lowerKey = key.toLowerCase();
-        this._keyDownCallbacks[lowerKey] = callback;
-    }
-
-    // Set or overwrite the keyup callback for a given key
-    public onKeyUp(key: string, callback: KeyCallback): void {
-        const lowerKey = key.toLowerCase();
-        this._keyUpCallbacks[lowerKey] = callback;
-    }
-
-    // Set or overwrite the single mouse up callback
-    public onMouseUp(callback: KeyCallback): void {
-        this._mouseUpCallback = callback;
-    }
-
-    public onRightMouseUp(callback: KeyCallback): void {
-        this._rightMouseUpCallback = callback;
-    }
-
-    // Set or overwrite the single wheel callback
-    public onWheelEvent(callback: WheelCallback): void {
-        this._wheelCallback = callback;
-    }
-
-    // Removal methods
-    public offKeyPress(key: string): void {
-        const lowerKey = key.toLowerCase();
-        if (this._keyDownCallbacks[lowerKey]) {
-            this._keyDownCallbacks[lowerKey] = undefined;
-        }
-    }
-
-    public offKeyUp(key: string): void {
-        const lowerKey = key.toLowerCase();
-        if (this._keyUpCallbacks[lowerKey]) {
-            this._keyUpCallbacks[lowerKey] = undefined;
-        }
-    }
-
-    public offMouseUp(): void {
-        this._mouseUpCallback = undefined;
-    }
-
-    public offRightMouseUp(): void {
-        this._rightMouseUpCallback = undefined;
-    }
-
-    public offWheelEvent(): void {
-        this._wheelCallback = undefined;
-    }
-
-    public dispose(): void {
-        window.removeEventListener("keydown", this.handleDomKeyDown);
-        window.removeEventListener("keyup", this.handleDomKeyUp);
-        window.removeEventListener("mousedown", this.handleDomMouseDownEvent);
-        window.removeEventListener("mouseup", this.handleDomMouseUpEvent);
-        window.removeEventListener("mousemove", this.handleDomMouseMoveEvent);
-        window.removeEventListener("wheel", this.handleDomWheelEvent);
+    private static emit(listeners: Set<Listener> | undefined): void {
+        if (!listeners) return;
+        // Copy so listeners can unsubscribe while being called
+        for (const listener of [...listeners]) listener();
     }
 }
 

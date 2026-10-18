@@ -1,6 +1,7 @@
-import Entity from "@/entities/Entity.ts";
+import Entity from "@/entities/Entity";
 import { CanvasTexture, Mesh, MeshStandardMaterial, PlaneGeometry, Vector3 } from "three";
 
+/** Transparent canvas laid over the ground that tanks draw their tread marks onto. */
 class TreadsCanvas extends Entity {
     private _canvas: HTMLCanvasElement;
     private _context: CanvasRenderingContext2D;
@@ -33,12 +34,9 @@ class TreadsCanvas extends Entity {
             transparent: true,
         });
 
-        this.mesh = new Mesh(geometry, material);
-        this.mesh.position.set(
-            this.position.x,
-            this.position.y,
-            this.position.z + 0.01
-        );
+        this.setMesh(new Mesh(geometry, material));
+        this.mesh.position.z += 0.01; // Just above the ground to avoid z-fighting
+        this.mesh.receiveShadow = true;
     }
 
     public drawTreads(position: Vector3, angle: number): void {

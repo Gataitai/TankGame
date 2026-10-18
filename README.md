@@ -7,7 +7,10 @@ Tank Game inspired by Wii play tanks
 - **Mouse Movement** – Aim the turret.
 - **Left Mouse Button** – Shoot bullets.
 - **Right Mouse Button** – Place a landmine.
-- **Scroll Wheel** – Switch between different shooting modes (bullets/missiles).
+- **Scroll Wheel** – Switch between bullets and guided missiles.
+- **1** – Toggle between the top-down camera and a free orbit camera (the game pauses while orbiting).
+
+Destroy every enemy tank to advance to the next level; if your tank is destroyed you restart at level 1.
 
 ## Installation and Running the Game
 1. Clone this repository:
@@ -39,3 +42,11 @@ Tank Game inspired by Wii play tanks
 ## Technologies Used
 - **Three.js** – For rendering 3D graphics.
 - **TypeScript** – Core game logic and development
+
+## Project Structure
+- `src/scene/GameScene.ts` – Game loop, level flow and `spawn()`, the single entry point for adding entities.
+- `src/scene/managers/` – Entities & collision queries, input, camera, lighting and level building.
+- `src/entities/` – Tanks, weapons (strategies) and projectiles.
+- `src/effects/` – Short-lived visual effects.
+- `src/map/` – Ground, walls and the tread-mark canvas.
+- `src/config.ts` – Shared tuning constants.

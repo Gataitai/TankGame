@@ -1,80 +1,67 @@
-// CameraController.ts
-import { Camera, WebGLRenderer, OrthographicCamera, PerspectiveCamera } from "three";
+import { Camera, Vector3 } from "three";
 import CameraStrategy from "@/scene/cameraStrategies/CameraStrategy";
-import OrthographicStrategy from "@/scene/cameraStrategies/OrthographicStratety";
 
-class CameraController {
-    private _cameraStrategy: CameraStrategy;
-    private _camera!: Camera;
-    private _mapSize: number = 25;
-    private _shakeDuration: number = 0;
-    private _shakeIntensity: number = 0.5;
-    private _originalZ: number = 10;
+/** Holds the active camera strategy and applies camera shake on top of it. */
+class CameraManager {
+    private _strategy: CameraStrategy;
 
-    constructor() {
-        // Default to OrthographicStrategy
-        this._cameraStrategy = new OrthographicStrategy();
+    private _shakeTimeLeft = 0;
+    private _shakeIntensity = 0;
+    /** Offset currently applied to the camera; removed again before the next one is applied. */
+    private readonly _shakeOffset = new Vector3();
+
+    constructor(initialStrategy: CameraStrategy) {
+        this._strategy = initialStrategy;
     }
 
-    public setupCamera(renderer: WebGLRenderer, mapSize: number) {
-        this._mapSize = mapSize;
-        // Create a new camera from the current strategy
-        this._camera = this._cameraStrategy.setupCamera(renderer, mapSize);
+    public get camera(): Camera {
+        return this._strategy.camera;
     }
 
-    public get camera() {
-        return this._camera;
+    public get strategy(): CameraStrategy {
+        return this._strategy;
     }
 
-    public get cameraStrategy() {
-        return this._cameraStrategy;
+    public setStrategy(strategy: CameraStrategy): void {
+        this.clearShakeOffset();
+        this._shakeTimeLeft = 0;
+        this._strategy.dispose();
+        this._strategy = strategy;
     }
 
-    public shakeCamera(duration: number, intensity: number = 0.5): void {
-        this._shakeDuration = duration;
+    public shake(duration: number, intensity = 0.5): void {
+        this._shakeTimeLeft = duration;
         this._shakeIntensity = intensity;
     }
 
-    public applyCameraShake(deltaT: number, elapsedTime: number): void {
-        if (this._shakeDuration <= 0) return;
+    /**
+     * The shake is applied as an offset relative to wherever the camera is, so it works for any
+     * strategy and the camera ends up exactly where it started.
+     */
+    public update(deltaT: number, elapsedTime: number): void {
+        this.clearShakeOffset();
+        if (this._shakeTimeLeft <= 0) return;
 
-        this._shakeDuration -= deltaT;
-        const frequencyMultiplier = 50;
-        const mapCenterX = this._mapSize / 2;
+        this._shakeTimeLeft -= deltaT;
+        if (this._shakeTimeLeft <= 0) return;
 
-        this._camera.position.set(mapCenterX, 0, this._originalZ);
-
-        const shakeX = Math.sin(elapsedTime * frequencyMultiplier) * this._shakeIntensity;
-        const shakeY = Math.sin(elapsedTime * frequencyMultiplier * 1.2) * this._shakeIntensity;
-
-        this._camera.position.x += shakeX;
-        this._camera.position.y += shakeY;
+        const frequency = 50;
+        this._shakeOffset.set(
+            Math.sin(elapsedTime * frequency) * this._shakeIntensity,
+            Math.sin(elapsedTime * frequency * 1.2) * this._shakeIntensity,
+            0
+        );
+        this.camera.position.add(this._shakeOffset);
     }
 
-    public handleResize(width: number, height: number) {
-        const aspect = width / height;
-
-        if (this._camera instanceof OrthographicCamera) {
-            const frustumSize = 20;
-            this._camera.left = (-frustumSize * aspect) / 2;
-            this._camera.right = (frustumSize * aspect) / 2;
-            this._camera.top = frustumSize / 2;
-            this._camera.bottom = -frustumSize / 2;
-            this._camera.updateProjectionMatrix();
-        } else if (this._camera instanceof PerspectiveCamera) {
-            this._camera.aspect = aspect;
-            this._camera.updateProjectionMatrix();
-        }
+    public resize(width: number, height: number): void {
+        this._strategy.resize(width, height);
     }
 
-    public setCameraStrategy(strategy: CameraStrategy, renderer: WebGLRenderer, mapSize: number): void {
-        this._cameraStrategy = strategy;
-        this.setupCamera(renderer, mapSize);
-    }
-
-    public isOrthographic(): boolean {
-        return this._camera instanceof OrthographicCamera;
+    private clearShakeOffset(): void {
+        this.camera.position.sub(this._shakeOffset);
+        this._shakeOffset.set(0, 0, 0);
     }
 }
 
-export default CameraController;
+export default CameraManager;

@@ -1,19 +1,18 @@
-import Entity from "@/entities/Entity.ts";
 import { Mesh, MeshBasicMaterial, SphereGeometry, Vector3 } from "three";
+import Entity from "@/entities/Entity";
 
+/** Small unlit sphere showing where a light is. Survives level resets. */
 class LightIndicator extends Entity {
-    private _color: number;
+    private readonly _color: number;
 
     constructor(position: Vector3, color: number) {
         super(position);
         this._color = color;
+        this.persistent = true;
     }
 
-    async load(): Promise<void> {
-        const sphereGeometry = new SphereGeometry(0.3, 16, 16);
-        const sphereMaterial = new MeshBasicMaterial({ color: this._color });
-        this.mesh = new Mesh(sphereGeometry, sphereMaterial);
-        this.mesh.position.copy(this.position);
+    public async load(): Promise<void> {
+        this.setMesh(new Mesh(new SphereGeometry(0.3, 16, 16), new MeshBasicMaterial({ color: this._color })));
     }
 }
 

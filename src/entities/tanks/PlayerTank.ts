@@ -1,201 +1,106 @@
-import Tank from "@/entities/tanks/Tank.ts";
-import { Plane, Raycaster, Vector2, Vector3 } from "three";
-import GameScene from "@/scene/GameScene.ts";
-import BulletShooter from "@/entities/tanks/weaponStrategies/BulletShooter.ts";
-import WeaponStrategy from "@/entities/tanks/weaponStrategies/WeaponStrategy.ts";
-import MissileShooter from "@/entities/tanks/weaponStrategies/MissileShooter.ts";
-import InputManager from "@/scene/managers/InputManager.ts";
-import LandminePlacer from "@/entities/tanks/weaponStrategies/LandminePlacer.ts";
+import { Vector2, Vector3 } from "three";
+import Tank from "@/entities/tanks/Tank";
+import type WeaponStrategy from "@/entities/tanks/weaponStrategies/WeaponStrategy";
+import BulletShooter from "@/entities/tanks/weaponStrategies/BulletShooter";
+import MissileShooter from "@/entities/tanks/weaponStrategies/MissileShooter";
+import LandminePlacer from "@/entities/tanks/weaponStrategies/LandminePlacer";
+import GameScene from "@/scene/GameScene";
+import InputManager, { type Unsubscribe } from "@/scene/managers/InputManager";
+import { stepAngleTowards, wrapAngle } from "@/utils/MathUtils";
 
-type KeyboardState = {
-    W: boolean;
-    A: boolean;
-    S: boolean;
-    D: boolean;
-};
+const ROTATION_SPEED = Math.PI * 4;
+const ALIGN_THRESHOLD = 0.01;
 
 class PlayerTank extends Tank {
-    private _weaponStrategy: WeaponStrategy;
-    private _bulletShooter: BulletShooter = new BulletShooter();
-    private _missileShooter: MissileShooter = new MissileShooter();
-    private _minePlacer: LandminePlacer = new LandminePlacer();
-    private _currentTargetAngle: number | null = null;
-    private _firstPerson: boolean = false;
+    private readonly _bulletShooter = new BulletShooter();
+    private readonly _missileShooter = new MissileShooter();
+    private readonly _minePlacer = new LandminePlacer();
+    private _primaryWeapon: WeaponStrategy = this._bulletShooter;
 
-    private _keyboardState: KeyboardState = {
-        W: false,
-        A: false,
-        S: false,
-        D: false,
-    };
+    /** Heading the tank keeps turning towards after the keys are released. */
+    private _targetAngle: number | null = null;
+    private readonly _unsubscribers: Unsubscribe[];
 
-    constructor(position: Vector3, speed: number = 3.5) {
+    constructor(position: Vector3, speed = 3.5) {
         super(position, speed);
-        this._weaponStrategy = this._bulletShooter; // Default is bullet shooter for left click
 
         const input = InputManager.instance;
-
-        // Register key down callbacks
-        input.onKeyPress("w", () => { this._keyboardState.W = true; });
-        input.onKeyPress("a", () => { this._keyboardState.A = true; });
-        input.onKeyPress("s", () => { this._keyboardState.S = true; });
-        input.onKeyPress("d", () => { this._keyboardState.D = true; });
-
-        // Register key up callbacks
-        input.onKeyUp("w", () => { this._keyboardState.W = false; });
-        input.onKeyUp("a", () => { this._keyboardState.A = false; });
-        input.onKeyUp("s", () => { this._keyboardState.S = false; });
-        input.onKeyUp("d", () => { this._keyboardState.D = false; });
-
-        // Left mouse up for shooting bullets/missiles
-        input.onMouseUp(() => {
-            this.shoot();
-        });
-
-        // Right mouse up for placing mines via LandminePlacer
-        input.onRightMouseUp(() => {
-            this.placeMine();
-        });
-
-        // Wheel to switch bullet/missile shooter if needed
-        input.onWheelEvent((deltaY: number) => {
-            if (deltaY < 0) {
-                this._weaponStrategy = this._bulletShooter;
-                console.log("Switched to Bullet Shooter");
-            } else if (deltaY > 0) {
-                this._weaponStrategy = this._missileShooter;
-                console.log("Switched to Missile Shooter");
-            }
-            input.resetWheelDelta();
-        });
-    }
-
-    public toggleFirstPersonMode(): void {
-        this._firstPerson = !this._firstPerson;
-        console.log(`First-person mode: ${this._firstPerson}`);
-
-        if (this._firstPerson) {
-            document.body.requestPointerLock().catch((err) => {
-                console.error("Failed to lock pointer:", err);
-            });
-        } else {
-            document.exitPointerLock();
-        }
-    }
-
-    private shoot(): void {
-        const spawnDistance = 1;
-        const offset = new Vector3(
-            Math.sin(this._turretRotation) * spawnDistance,
-            -Math.cos(this._turretRotation) * spawnDistance,
-            0.5
-        );
-        const shootingPosition = this.mesh.position.clone().add(offset);
-        this._weaponStrategy.spawn(shootingPosition, this._turretRotation);
-    }
-
-    private placeMine(): void {
-        const minePosition = this.mesh.position.clone();
-        // Use the mine placer strategy for placing mines
-        this._minePlacer.spawn(minePosition); // rotation not needed for mine
-    }
-
-    private calculateDesiredDirection(): Vector2 {
-        let direction = new Vector2(0, 0);
-        if (this._keyboardState.W) direction.y -= 1;
-        if (this._keyboardState.S) direction.y += 1;
-        if (this._keyboardState.A) direction.x -= 1;
-        if (this._keyboardState.D) direction.x += 1;
-        direction.normalize();
-        return direction;
+        this._unsubscribers = [
+            input.onMouseUp(() => this.whenActive(() => this.fire(this._primaryWeapon))),
+            input.onRightMouseUp(() => this.whenActive(() => this._minePlacer.spawn(this.position.clone()))),
+            input.onWheel((deltaY) => this.whenActive(() => this.switchWeapon(deltaY))),
+        ];
     }
 
     public update(deltaT: number): void {
-        const moveSpeed = this._moveSpeed;
-        const rotationSpeed = Math.PI * 4;
-        const desiredDirection = this.calculateDesiredDirection();
+        this._bulletShooter.update();
+        this._missileShooter.update(deltaT);
+        this._minePlacer.update();
 
-        if (desiredDirection.length() > 0 || this._currentTargetAngle !== null) {
-            const desiredAngle = desiredDirection.length() > 0
-                ? Math.atan2(desiredDirection.x, desiredDirection.y)
-                : this._currentTargetAngle!;
-
-            const angleDifference = ((desiredAngle - this._rotation + Math.PI) % (2 * Math.PI)) - Math.PI;
-
-            if (Math.abs(angleDifference) > 0.01) {
-                // Rotate smoothly toward target angle
-                this._rotation += Math.sign(angleDifference) * Math.min(rotationSpeed * deltaT, Math.abs(angleDifference));
-                this.mesh.setRotationFromAxisAngle(new Vector3(0, 0, 1), this._rotation);
-                this._currentTargetAngle = desiredAngle;
-            } else {
-                // Stop rotating once aligned
-                this._currentTargetAngle = null;
-
-                if (desiredDirection.length() > 0) {
-                    const movement = new Vector3(
-                        Math.sin(this._rotation) * moveSpeed * deltaT,
-                        -Math.cos(this._rotation) * moveSpeed * deltaT,
-                        0
-                    );
-
-                    if (this.canMove(movement)) {
-                        this.applyMovement(movement);
-                    } else {
-                        const movementX = new Vector3(movement.x, 0, 0);
-                        const movementY = new Vector3(0, movement.y, 0);
-
-                        if (this.canMove(movementX)) {
-                            movementX.multiplyScalar(0.5);
-                            this.applyMovement(movementX);
-                        } else if (this.canMove(movementY)) {
-                            movementY.multiplyScalar(0.5);
-                            this.applyMovement(movementY);
-                        }
-                    }
-                }
-            }
-        }
-
-        const input = InputManager.instance;
-        const mouseNDC = input.mousePosition.clone();
-        const raycaster = new Raycaster();
-        raycaster.setFromCamera(mouseNDC, GameScene.instance.camera);
-
-        const planeZ = new Plane(new Vector3(0, 0, 1), 0);
-        const mouseWorldPosition = new Vector3();
-        raycaster.ray.intersectPlane(planeZ, mouseWorldPosition);
-
-        const tankPosition = this.mesh.position.clone();
-        const direction = mouseWorldPosition.clone().sub(tankPosition);
-        this._turretRotation = Math.atan2(direction.x, -direction.y);
-
-        let turretLocalRotation = this._turretRotation - this._rotation;
-        if (turretLocalRotation > Math.PI) {
-            turretLocalRotation -= Math.PI * 2;
-        } else if (turretLocalRotation < -Math.PI) {
-            turretLocalRotation += Math.PI * 2;
-        }
-        this._tankTurretMesh.rotation.z = turretLocalRotation;
+        this.updateMovement(deltaT);
+        this.aimTurretAt(GameScene.instance.mouseWorldPosition);
     }
 
     public dispose(): void {
         super.dispose();
+        this._unsubscribers.forEach((unsubscribe) => unsubscribe());
+    }
 
+    /** Ignores input while the game is paused or the tank is dead. */
+    private whenActive(action: () => void): void {
+        if (!GameScene.instance.paused && !this.shouldDispose) action();
+    }
+
+    private switchWeapon(deltaY: number): void {
+        const next = deltaY < 0 ? this._bulletShooter : deltaY > 0 ? this._missileShooter : this._primaryWeapon;
+        if (next === this._primaryWeapon) return;
+
+        this._primaryWeapon = next;
+        GameScene.instance.notify(next === this._bulletShooter ? "Bullets" : "Missiles");
+    }
+
+    private readDirection(): Vector2 {
         const input = InputManager.instance;
-        // Remove all key bindings
-        input.offKeyPress("w");
-        input.offKeyPress("a");
-        input.offKeyPress("s");
-        input.offKeyPress("d");
+        const axis = (positive: string, negative: string) =>
+            (input.isKeyDown(positive) ? 1 : 0) - (input.isKeyDown(negative) ? 1 : 0);
 
-        input.offKeyUp("w");
-        input.offKeyUp("a");
-        input.offKeyUp("s");
-        input.offKeyUp("d");
+        // W moves towards +Y on screen, which is a negative value on this axis
+        return new Vector2(axis("KeyD", "KeyA"), axis("KeyS", "KeyW"));
+    }
 
-        input.offMouseUp();
-        input.offRightMouseUp();
-        input.offWheelEvent();
+    /** Turns towards the pressed direction first, then drives once aligned. */
+    private updateMovement(deltaT: number): void {
+        const direction = this.readDirection();
+        const hasInput = direction.lengthSq() > 0;
+        if (!hasInput && this._targetAngle === null) return;
+
+        const desiredAngle = hasInput ? Math.atan2(direction.x, direction.y) : this._targetAngle!;
+
+        if (Math.abs(wrapAngle(desiredAngle - this._rotation)) > ALIGN_THRESHOLD) {
+            this.setBodyRotation(stepAngleTowards(this._rotation, desiredAngle, ROTATION_SPEED * deltaT));
+            this._targetAngle = desiredAngle;
+            return;
+        }
+
+        this._targetAngle = null;
+        if (hasInput) this.drive(deltaT);
+    }
+
+    private drive(deltaT: number): void {
+        const movement = this.movementFor(deltaT);
+        if (this.canMove(movement)) {
+            this.applyMovement(movement);
+            return;
+        }
+
+        // Blocked: slide along the wall at half speed on whichever axis is free
+        const alongX = new Vector3(movement.x, 0, 0);
+        const alongY = new Vector3(0, movement.y, 0);
+        if (this.canMove(alongX)) {
+            this.applyMovement(alongX.multiplyScalar(0.5));
+        } else if (this.canMove(alongY)) {
+            this.applyMovement(alongY.multiplyScalar(0.5));
+        }
     }
 }
 

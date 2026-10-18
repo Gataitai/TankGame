@@ -1,36 +1,35 @@
-import { PerspectiveCamera, WebGLRenderer, Vector3 } from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import { PerspectiveCamera, Vector2, WebGLRenderer } from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import CameraStrategy from "./CameraStrategy";
 
+/** Free orbit camera for looking around the map. Gameplay is paused while it's active. */
 class PerspectiveStrategy implements CameraStrategy {
-    public setupCamera(renderer: WebGLRenderer, mapSize: number): PerspectiveCamera {
-        const aspect = renderer.domElement.width / renderer.domElement.height;
-        const camera = new PerspectiveCamera(75, aspect, 0.1, 1000);
+    public readonly camera: PerspectiveCamera;
+    public readonly pausesGame = true;
+    private readonly _controls: OrbitControls;
 
-        // Set the camera position above and slightly offset from the map
-        camera.position.set(mapSize / 2, mapSize / 2 - 20, 20); // Adjust Z for zoomed-in height
-        camera.up.set(0, 0, 1); // Align Z-axis as up
+    constructor(renderer: WebGLRenderer, mapSize: number) {
+        const size = renderer.getSize(new Vector2());
+        this.camera = new PerspectiveCamera(75, size.x / size.y, 0.1, 1000);
+        this.camera.position.set(mapSize / 2, mapSize / 2 - 20, 20);
+        this.camera.up.set(0, 0, 1); // Z is up in this game
 
-        // Set up OrbitControls
-        const controls = new OrbitControls(camera, renderer.domElement);
+        this._controls = new OrbitControls(this.camera, renderer.domElement);
+        this._controls.enablePan = false;
+        this._controls.minPolarAngle = Math.PI / 10; // Keep a slight tilt
+        this._controls.maxPolarAngle = Math.PI / 2;  // Never look from below the ground
+        this._controls.target.set(mapSize / 2, mapSize / 2, 0);
+        this._controls.update();
+    }
 
-        // Disable right-click panning
-        // Disable right-click panning
-        controls.enablePan = false;
+    public resize(width: number, height: number): void {
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+    }
 
-        // Restrict vertical rotation to prevent flipping
-        controls.minPolarAngle = Math.PI / 10; // Slight tilt for viewing angle
-        controls.maxPolarAngle = Math.PI / 2; // Prevent underside view
-
-        // Set the center of the map as the controls target
-        const target = new Vector3(mapSize / 2, mapSize / 2, 0); // Map center
-        controls.target.copy(target);
-
-        // Make sure the controls update their state
-        controls.update();
-
-        // Return the camera configured with OrbitControls
-        return camera;
+    /** Removes the OrbitControls' event listeners from the canvas. */
+    public dispose(): void {
+        this._controls.dispose();
     }
 }
 

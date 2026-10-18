@@ -1,2 +1,5 @@
-/.idea/
-/package-lock.json
+node_modules/
+dist/
+.idea/
+_to_delete/
+*.local

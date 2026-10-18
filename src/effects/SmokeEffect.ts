@@ -1,54 +1,45 @@
-// SmokeEffect.ts
-import UpdatableEntity from "@/entities/UpdatableEntity.ts";
-import {
-    DodecahedronGeometry,
-    Mesh,
-    MeshPhongMaterial,
-    Vector3,
-} from "three";
-import { randomIntInRange, randomSign } from "@/utils/MathUtils.ts";
+import { DodecahedronGeometry, Mesh, MeshPhongMaterial, Vector3 } from "three";
+import UpdatableEntity from "@/entities/UpdatableEntity";
+import { markShared } from "@/utils/SharedResources";
+import { randomIntInRange, randomSign } from "@/utils/MathUtils";
 
+const DURATION = 1;
+const SIZE = 0.1;
+const RISE_SPEED = 3;
+const GEOMETRY = markShared(new DodecahedronGeometry(SIZE, 0));
+
+/** Small puff of smoke rising from the barrel. */
 class SmokeEffect extends UpdatableEntity {
-    private _size: number = 0.1;
-    private _effectDuration: number = 1;
+    private _timeLeft = DURATION;
+    private _material!: MeshPhongMaterial;
 
     constructor(position: Vector3) {
         super(position);
     }
 
     public async load(): Promise<void> {
-        const particleGeometry = new DodecahedronGeometry(this._size, 0);
-        const smokeMaterial = new MeshPhongMaterial({
-            color: 0xfafafa,
-            transparent: true,
-        });
+        this._material = new MeshPhongMaterial({ color: 0xfafafa, transparent: true });
 
-        const totalParticles = randomIntInRange(2, 6);
-        for (let i = 0; i < totalParticles; i++) {
-            const smokePositionOffset = new Vector3(
-                Math.random() * this._size * randomSign(),
-                Math.random() * this._size * randomSign(),
-                Math.random() * this._size * randomSign()
-            );
-            const smokeParticle = new Mesh(particleGeometry, smokeMaterial);
-            smokeParticle.position.add(smokePositionOffset);
-            this.mesh.add(smokeParticle);
+        const jitter = () => Math.random() * SIZE * randomSign();
+        const count = randomIntInRange(2, 6);
+        for (let i = 0; i < count; i++) {
+            const particle = new Mesh(GEOMETRY, this._material);
+            particle.position.set(jitter(), jitter(), jitter());
+            this.mesh.add(particle);
         }
     }
 
     public update(deltaT: number): void {
-        this._effectDuration -= deltaT;
-        if (this._effectDuration <= 0) {
+        this._timeLeft -= deltaT;
+        if (this._timeLeft <= 0) {
             this.shouldDispose = true;
             return;
         }
 
-        this.mesh.children.forEach((element) => {
-            const smokeParticle = element as Mesh;
-            const material = smokeParticle.material as MeshPhongMaterial;
-            material.opacity = this._effectDuration;
-            smokeParticle.position.add(new Vector3(0, 0, 3 * deltaT));
-        });
+        this._material.opacity = this._timeLeft / DURATION;
+        for (const particle of this.mesh.children) {
+            particle.position.z += RISE_SPEED * deltaT;
+        }
     }
 }
 

@@ -1,63 +1,43 @@
-import UpdatableEntity from "@/entities/UpdatableEntity.ts";
-import {
-    DodecahedronGeometry,
-    MeshPhongMaterial,
-    Vector3,
-} from "three";
-import { randomSign } from "@/utils/MathUtils.ts"; // Assuming you have this utility function
+import { DodecahedronGeometry, Mesh, MeshPhongMaterial, Vector3 } from "three";
+import UpdatableEntity from "@/entities/UpdatableEntity";
+import { markShared } from "@/utils/SharedResources";
+import { randomSign } from "@/utils/MathUtils";
 
+const START_OPACITY = 0.4;
+const MAX_GROWTH = 1.2; // Expands to 2.2x its initial size
+const GEOMETRY = markShared(new DodecahedronGeometry(0.1, 0));
+
+/** Single smoke puff left behind by projectiles. */
 class TrailEffect extends UpdatableEntity {
-    private _duration: number;
-    private _initialDuration: number;
+    private readonly _duration: number;
+    private _timeLeft: number;
+    private _material!: MeshPhongMaterial;
 
-    constructor(position: Vector3, duration: number = 0.5) {
+    constructor(position: Vector3, duration = 0.5) {
         super(position);
         this._duration = duration;
-        this._initialDuration = duration;
+        this._timeLeft = duration;
     }
 
     public async load(): Promise<void> {
-        // Create a dodecahedron geometry for a smoke puff shape
-        const smokeGeometry = new DodecahedronGeometry(0.1, 0); // Small initial size for smoke puff
-        const smokeMaterial = new MeshPhongMaterial({
-            color: 0xfafafa, // Corrected hex color code
-            transparent: true,
-            opacity: 0.4, // Start with a medium opacity
-        });
+        this._material = new MeshPhongMaterial({ color: 0xfafafa, transparent: true, opacity: START_OPACITY });
+        this.setMesh(new Mesh(GEOMETRY, this._material));
 
-        // Set the mesh for this entity
-        this.mesh.geometry = smokeGeometry;
-        this.mesh.material = smokeMaterial;
-
-        // Apply a random angle offset to the initial position
-        const angleOffset = Math.PI * Math.random() * randomSign();
-        const offsetDirection = new Vector3(
-            Math.sin(angleOffset),
-            Math.cos(angleOffset),
-            0
-        );
-        this.mesh.position.add(offsetDirection.multiplyScalar(0.1)); // Adjust distance as needed
+        // Small random offset so the trail doesn't look like a straight line
+        const angle = Math.PI * Math.random() * randomSign();
+        this.position.add(new Vector3(Math.sin(angle), Math.cos(angle), 0).multiplyScalar(0.1));
     }
 
     public update(deltaT: number): void {
-        // Decrease the duration
-        this._duration -= deltaT;
-
-        // Calculate progress for scaling and fading (0 to 1)
-        const progress = 1 - this._duration / this._initialDuration;
-
-        // Gradually decrease opacity to fade out the smoke
-        const material = this.mesh.material as MeshPhongMaterial;
-        material.opacity = Math.max(0, 0.4 - progress * 0.4);
-
-        // Scale the particle up slightly over time to simulate dispersion
-        const scale = 1 + progress * 1.2; // Expands up to 2.2 times initial size
-        this.mesh.scale.set(scale, scale, scale);
-
-        // Mark for disposal when the duration ends
-        if (this._duration <= 0) {
+        this._timeLeft -= deltaT;
+        if (this._timeLeft <= 0) {
             this.shouldDispose = true;
+            return;
         }
+
+        const progress = 1 - this._timeLeft / this._duration;
+        this._material.opacity = START_OPACITY * (1 - progress);
+        this.mesh.scale.setScalar(1 + progress * MAX_GROWTH);
     }
 }
 

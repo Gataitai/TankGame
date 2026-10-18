@@ -1,5 +1,5 @@
-import './style.css';
-import GameScene from "./scene/GameScene.ts";
+import "./style.css";
+import GameScene from "./scene/GameScene";
 
 async function main() {
     try {

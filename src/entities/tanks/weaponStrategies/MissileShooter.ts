@@ -1,39 +1,25 @@
 import { Vector3 } from "three";
-import WeaponStrategy from "./WeaponStrategy.ts";
-import Missile from "@/entities/weapons/Missile.ts";
-import GameScene from "@/scene/GameScene.ts";
-import FireEffect from "@/effects/FireEffect.ts";
+import WeaponStrategy from "./WeaponStrategy";
+import Missile from "@/entities/weapons/Missile";
+import FireEffect from "@/effects/FireEffect";
+import GameScene from "@/scene/GameScene";
 
 class MissileShooter implements WeaponStrategy {
-    private _reloadTime: number = 5000; // 5 seconds
-    private _isReloading: boolean = false;
+    private readonly _reloadTime = 5; // seconds
+    private _reloadRemaining = 0;
 
-    public spawn(position: Vector3, turretRotation: number): void {
-        if (this._isReloading) return;
+    public spawn(position: Vector3, rotation: number): void {
+        if (this._reloadRemaining > 0) return;
 
-        const missile = new Missile(position, turretRotation);
-        missile.load().then(() => {
-            GameScene.instance.addToScene(missile);
-
-            // Set a timeout for the missile's lifetime
-            setTimeout(() => {
-                if(!missile.shouldDispose){
-                    missile.explodeAndDispose();
-                }
-            }, 5000); // 5 seconds lifetime
-        });
-
-        const fireEffect = new FireEffect(position, turretRotation);
-        fireEffect.load().then(() => GameScene.instance.addToScene(fireEffect));
-
-        this.startReload();
+        const scene = GameScene.instance;
+        void scene.spawn(new Missile(position, rotation));
+        void scene.spawn(new FireEffect(position, rotation));
+        this._reloadRemaining = this._reloadTime;
     }
 
-    private startReload(): void {
-        this._isReloading = true;
-        setTimeout(() => {
-            this._isReloading = false;
-        }, this._reloadTime);
+    /** Uses game time, so reloading stops while the game is paused. */
+    public update(deltaT: number): void {
+        this._reloadRemaining = Math.max(0, this._reloadRemaining - deltaT);
     }
 }
 

@@ -1,16 +1,17 @@
-import UpdatableEntity from "@/entities/UpdatableEntity.ts";
-import {
-    DodecahedronGeometry,
-    Mesh,
-    MeshPhongMaterial,
-    Vector3,
-} from "three";
-import { randomIntInRange, randomSign } from "@/utils/MathUtils.ts";
+import { DodecahedronGeometry, Mesh, MeshPhongMaterial, Vector3 } from "three";
+import UpdatableEntity from "@/entities/UpdatableEntity";
+import { markShared } from "@/utils/SharedResources";
+import { directionFromAngle, randomIntInRange, randomSign } from "@/utils/MathUtils";
 
+const DURATION = 1;
+const GEOMETRY = markShared(new DodecahedronGeometry(0.1, 0));
+const MATERIAL = markShared(new MeshPhongMaterial({ color: 0xffb400 }));
+const step = new Vector3();
+
+/** Muzzle flash / sparks shooting out in a narrow cone. */
 class FireEffect extends UpdatableEntity {
-    private _angle: number;
-    private _size: number = 0.1;
-    private _effectDuration: number = 1;
+    private readonly _angle: number;
+    private _timeLeft = DURATION;
 
     constructor(position: Vector3, angle: number) {
         super(position);
@@ -18,55 +19,29 @@ class FireEffect extends UpdatableEntity {
     }
 
     public async load(): Promise<void> {
-        const particleGeometry = new DodecahedronGeometry(this._size, 0);
-        const fireMaterial = new MeshPhongMaterial({
-            color: 0xffb400,
-        });
-
-        const totalParticles = randomIntInRange(2, 6);
-        for (let i = 0; i < totalParticles; i++) {
-            const angleOffset = Math.PI * 0.08 * Math.random() * randomSign();
-            const particleSpeed = 1.75 * Math.random() * 3;
-            const fireParticle = new Mesh(particleGeometry, fireMaterial);
-            fireParticle.userData = {
-                angle: this._angle + angleOffset,
-                speed: particleSpeed,
+        const count = randomIntInRange(2, 6);
+        for (let i = 0; i < count; i++) {
+            const particle = new Mesh(GEOMETRY, MATERIAL);
+            particle.userData = {
+                angle: this._angle + Math.PI * 0.08 * Math.random() * randomSign(),
+                speed: 1.75 * Math.random() * 3,
             };
-            this.mesh.add(fireParticle);
+            this.mesh.add(particle);
         }
     }
 
     public update(deltaT: number): void {
-        this._effectDuration -= deltaT;
-        if (this._effectDuration <= 0) {
+        this._timeLeft -= deltaT;
+        if (this._timeLeft <= 0) {
             this.shouldDispose = true;
             return;
         }
 
-        this.mesh.children.forEach((element) => {
-            const fireParticle = element as Mesh;
-            const angle = fireParticle.userData["angle"];
-            const speed = fireParticle.userData["speed"];
-            const computedMovement = new Vector3(
-                speed *
-                Math.sin(angle) *
-                deltaT *
-                this._effectDuration *
-                0.75,
-                -speed *
-                Math.cos(angle) *
-                deltaT *
-                this._effectDuration *
-                0.75,
-                0
-            );
-            fireParticle.position.add(computedMovement);
-            fireParticle.scale.set(
-                this._effectDuration,
-                this._effectDuration,
-                this._effectDuration
-            );
-        });
+        for (const particle of this.mesh.children) {
+            const { angle, speed } = particle.userData;
+            particle.position.add(directionFromAngle(angle, speed * deltaT * this._timeLeft * 0.75, step));
+            particle.scale.setScalar(this._timeLeft);
+        }
     }
 }
 

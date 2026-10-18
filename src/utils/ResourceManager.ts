@@ -1,5 +1,19 @@
-import { Texture, TextureLoader } from "three";
-import { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
+import { Mesh, Texture, TextureLoader } from "three";
+import { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { markShared } from "@/utils/SharedResources";
+import { randomElement } from "@/utils/MathUtils";
+
+const TEXTURES: Record<string, string> = {
+    "ground": "textures/ground.png",
+    "breakable-wall": "textures/wall0.png",
+    "death-mark": "textures/death_mark0.png",
+};
+
+const WALL_TEXTURES = [1, 2, 3, 4, 5, 6].map((i) => `textures/wall${i}.png`);
+
+const MODELS: Record<string, string> = {
+    "tank": "models/tank_player.glb",
+};
 
 class ResourceManager {
     private static _instance = new ResourceManager();
@@ -7,97 +21,55 @@ class ResourceManager {
         return this._instance;
     }
 
-    private constructor() {}
-
+    private _textures = new Map<string, Texture>();
     private _wallTextures: Texture[] = [];
     private _models = new Map<string, GLTF>();
-    private _textures = new Map<string, Texture>();
 
-    public getModel(modelName: string): GLTF | undefined {
-        return this._models.get(modelName);
-    }
+    private constructor() {}
 
-    public getTexture(textureName: string): Texture | undefined {
-        return this._textures.get(textureName);
-    }
-
-    // Load entry point
-    public load = async () => {
+    /** Loads every texture and model in parallel. Everything returned from here is shared. */
+    public async load(): Promise<void> {
         const textureLoader = new TextureLoader();
-        await this.loadBreakableWallTexture(textureLoader);
-        await this.loadWallTextures(textureLoader);
-        await this.loadGroundTexture(textureLoader);
-        await this.loadTankTextures(textureLoader);
-        await this.loadDeathMarkTextures(textureLoader);
-        await this.loadModels();
-    };
-
-    private loadModels = async () => {
-        // Instance of model loader
         const modelLoader = new GLTFLoader();
-        const playerTank = await modelLoader.loadAsync("models/tank_player.glb")
-        this._models.set("player", playerTank);
-    };
 
-    private loadTankTextures = async (textureLoader: TextureLoader) => {
-        // Player tank
-        const tankTexture = await textureLoader.loadAsync("textures/tank_texture_blue.png");
+        const loadTexture = async (url: string) => markShared(await textureLoader.loadAsync(url));
 
-        // Add to the game resources
-        this._textures.set("tank_blue", tankTexture);
-    };
+        await Promise.all([
+            ...Object.entries(TEXTURES).map(async ([key, url]) => {
+                this._textures.set(key, await loadTexture(url));
+            }),
+            Promise.all(WALL_TEXTURES.map(loadTexture)).then((textures) => {
+                this._wallTextures = textures;
+            }),
+            ...Object.entries(MODELS).map(async ([key, url]) => {
+                const gltf = await modelLoader.loadAsync(url);
+                // Clones of the model share its geometry, so never let an entity dispose it.
+                gltf.scene.traverse((child) => {
+                    if ((child as Mesh).isMesh) markShared((child as Mesh).geometry);
+                });
+                this._models.set(key, gltf);
+            }),
+        ]);
 
-    private loadDeathMarkTextures = async (textureLoader: TextureLoader) => {
-        const redDeathMark = await textureLoader.loadAsync("textures/death_mark0.png");
-        const whiteDeathMark = await textureLoader.loadAsync("textures/death_mark1.png");
-        const blueDeathMark = await textureLoader.loadAsync("textures/death_mark2.png");
-
-        this._textures.set("death_mark_red", redDeathMark);
-        this._textures.set("death_mark_white", whiteDeathMark);
-        this._textures.set("death_mark_blue", blueDeathMark);
-
+        // Premultiplied alpha avoids dark outlines around the decal's soft edges.
+        this.getTexture("death-mark").premultiplyAlpha = true;
     }
 
-    private loadGroundTexture = async (textureLoader: TextureLoader) => {
-        // Load the ground texture
-        const groundTexture = await textureLoader.loadAsync("textures/ground.png");
-        this._textures.set("ground", groundTexture);
-    };
+    public getTexture(name: string): Texture {
+        const texture = this._textures.get(name);
+        if (!texture) throw new Error(`Texture "${name}" is not loaded`);
+        return texture;
+    }
 
-    private loadBreakableWallTexture = async (textureLoader: TextureLoader) => {
-        // Load the breakable wall texture (wall0.png)
-        const breakableWallTexture = await textureLoader.loadAsync("textures/wall0.png");
-        this._textures.set("breakable-wall", breakableWallTexture);
-    };
+    public getModel(name: string): GLTF {
+        const model = this._models.get(name);
+        if (!model) throw new Error(`Model "${name}" is not loaded`);
+        return model;
+    }
 
-    private loadWallTextures = async (textureLoader: TextureLoader) => {
-        const wallTextureFiles = [
-            "wall1.png",
-            "wall2.png",
-            "wall3.png",
-            "wall4.png",
-            "wall5.png",
-            "wall6.png",
-        ];
-
-        // Load the wall textures
-        for (const fileName of wallTextureFiles) {
-            const texture = await textureLoader.loadAsync(`textures/${fileName}`);
-            this._wallTextures.push(texture);
-        }
-
-        // Load the bevel normal map and store it in the textures map
-        const bevelNormalMap = await textureLoader.loadAsync("textures/bevel_normal_map.png");
-        this._textures.set("bevel-normal-map", bevelNormalMap);
-    };
-
-
-    public getRandomWallTexture = (): Texture => {
-        // Return a random texture for regular walls
-        return this._wallTextures[
-            Math.floor(Math.random() * this._wallTextures.length)
-            ];
-    };
+    public getRandomWallTexture(): Texture {
+        return randomElement(this._wallTextures);
+    }
 }
 
 export default ResourceManager;

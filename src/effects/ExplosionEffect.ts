@@ -1,84 +1,59 @@
-import UpdatableEntity from "@/entities/UpdatableEntity.ts";
-import {
-    DodecahedronGeometry,
-    Mesh,
-    MeshPhongMaterial,
-    Vector3,
-} from "three";
-import { randomIntInRange, randomSign } from "@/utils/MathUtils.ts";
+import { DodecahedronGeometry, Mesh, MeshPhongMaterial, Vector3 } from "three";
+import UpdatableEntity from "@/entities/UpdatableEntity";
+import { markShared } from "@/utils/SharedResources";
+import { directionFromAngle, randomIntInRange, randomSign } from "@/utils/MathUtils";
+
+const DURATION = 0.5;
+const START_OPACITY = 0.4;
+const PARTICLE_GEOMETRY = markShared(new DodecahedronGeometry(1, 0));
+const step = new Vector3();
 
 class ExplosionEffect extends UpdatableEntity {
-    private _size: number;
-    private _effectDuration = 0.5;
-    private _currentDuration: number;
+    private readonly _size: number;
+    private _timeLeft = DURATION;
+    private _material!: MeshPhongMaterial;
 
     constructor(position: Vector3, size: number) {
         super(position);
         this._size = size;
-        this._currentDuration = this._effectDuration;
     }
 
     public async load(): Promise<void> {
-        const particleGeometry = new DodecahedronGeometry(this._size, 0);
-        const totalParticles = randomIntInRange(7, 13);
-        const explosionMaterial = new MeshPhongMaterial({
-            color: 0xfafafa, // Corrected hex color code
-            transparent: true,
-            opacity: 0.4, // Initial opacity
-        });
+        // One material for all particles: they all fade together
+        this._material = new MeshPhongMaterial({ color: 0xfafafa, transparent: true, opacity: START_OPACITY });
 
-        for (let i = 0; i < totalParticles; i++) {
-            const particleAngle = Math.random() * Math.PI * 2;
-            const explosionGeometry = particleGeometry.clone();
-            const particleSize =
-                0.3 * this._size +
-                Math.random() * this._size * 0.4 * randomSign();
+        const count = randomIntInRange(7, 13);
+        for (let i = 0; i < count; i++) {
+            const particleSize = 0.3 * this._size + Math.random() * this._size * 0.4 * randomSign();
+            const baseScale = this._size * particleSize;
 
-            explosionGeometry.scale(particleSize, particleSize, particleSize);
-            explosionGeometry.rotateX(Math.random() * Math.PI);
-            explosionGeometry.rotateY(Math.random() * Math.PI);
-            explosionGeometry.rotateZ(Math.random() * Math.PI);
-
-            const fireParticle = new Mesh(
-                explosionGeometry,
-                explosionMaterial.clone() // Clone material for independent opacity control
-            );
-            fireParticle.userData = {
-                angle: particleAngle,
+            const particle = new Mesh(PARTICLE_GEOMETRY, this._material);
+            particle.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+            particle.scale.setScalar(baseScale);
+            particle.userData = {
+                angle: Math.random() * Math.PI * 2,
                 speed: 0.5 + Math.random() * 2.5,
+                baseScale,
             };
-            this.mesh.add(fireParticle);
+            this.mesh.add(particle);
         }
     }
 
     public update(deltaT: number): void {
-        this._currentDuration -= deltaT;
-        if (this._currentDuration <= 0) {
+        this._timeLeft -= deltaT;
+        if (this._timeLeft <= 0) {
             this.shouldDispose = true;
             return;
         }
 
-        const progress = 1 - this._currentDuration / this._effectDuration;
+        const remaining = this._timeLeft / DURATION;
+        this._material.opacity = START_OPACITY * remaining;
 
-        this.mesh.children.forEach((element) => {
-            const fireParticle = element as Mesh;
-            const angle = fireParticle.userData["angle"];
-            const speed = fireParticle.userData["speed"];
-
-            // Update opacity to gradually fade out
-            const material = fireParticle.material as MeshPhongMaterial;
-            material.opacity = Math.max(0, 0.4 - progress * 0.4);
-
-            // Update scale and position
-            const scale = this._currentDuration / this._effectDuration;
-            fireParticle.scale.set(scale, scale, scale);
-            const computedMovement = new Vector3(
-                speed * Math.sin(angle) * deltaT,
-                -speed * Math.cos(angle) * deltaT,
-                0
-            );
-            fireParticle.position.add(computedMovement);
-        });
+        for (const particle of this.mesh.children) {
+            const { angle, speed, baseScale } = particle.userData;
+            particle.scale.setScalar(baseScale * remaining);
+            particle.position.add(directionFromAngle(angle, speed * deltaT, step));
+        }
     }
 }
 
