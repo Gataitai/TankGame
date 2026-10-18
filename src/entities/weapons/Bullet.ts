@@ -4,13 +4,15 @@ import Projectile from "@/entities/weapons/Projectile";
 import FireEffect from "@/effects/FireEffect";
 import GameScene from "@/scene/GameScene";
 
+export const BULLET_SPEED = 6;
+
 /** Fast shot that bounces off walls once before exploding. */
 class Bullet extends Projectile {
     private readonly _maxBounces = 1;
     private _bounceCount = 0;
 
     constructor(position: Vector3, angle: number) {
-        super(position, angle, 6, 0xffd8ad);
+        super(position, angle, BULLET_SPEED, 0xffd8ad);
     }
 
     protected onHitObstacle(obstacle: Entity): void {

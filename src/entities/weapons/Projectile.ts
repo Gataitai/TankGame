@@ -11,13 +11,13 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import Entity from "@/entities/Entity";
 import UpdatableEntity from "@/entities/UpdatableEntity";
 import Landmine from "@/entities/weapons/Landmine";
-import Tank from "@/entities/tanks/Tank";
 import ExplosionEffect from "@/effects/ExplosionEffect";
 import TrailEffect from "@/effects/TrailEffect";
 import GameScene from "@/scene/GameScene";
 import { markShared } from "@/utils/SharedResources";
 import { directionFromAngle } from "@/utils/MathUtils";
 import { HIT_SHAKE } from "@/config";
+import EnemyTank from "@/entities/tanks/EnemyTank";
 
 const RADIUS = 0.075;
 const BODY_LENGTH = 0.2;
@@ -120,7 +120,7 @@ abstract class Projectile extends UpdatableEntity {
         } else if (hit instanceof Landmine) {
             hit.trigger();
             this.explodeAndDispose();
-        } else if (hit instanceof Tank) {
+        } else if (hit instanceof EnemyTank) {
             hit.destroy();
             this.explodeAndDispose();
             GameScene.instance.shakeCamera(HIT_SHAKE.duration, HIT_SHAKE.intensity);

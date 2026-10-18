@@ -33,3 +33,12 @@ export const stepAngleTowards = (current: number, target: number, maxStep: numbe
     const diff = wrapAngle(target - current);
     return wrapAngle(current + Math.sign(diff) * Math.min(maxStep, Math.abs(diff)));
 };
+
+/** Distance (in the XY plane) from point `p` to the line segment `a`-`b`. */
+export const distanceToSegment2D = (p: Vector3, a: Vector3, b: Vector3): number => {
+    const abx = b.x - a.x;
+    const aby = b.y - a.y;
+    const lengthSq = abx * abx + aby * aby;
+    const t = lengthSq > 0 ? Math.min(1, Math.max(0, ((p.x - a.x) * abx + (p.y - a.y) * aby) / lengthSq)) : 0;
+    return Math.hypot(a.x + abx * t - p.x, a.y + aby * t - p.y);
+};

@@ -1,5 +1,7 @@
 import { Camera, Clock, Plane, Raycaster, Scene, Sphere, Vector3, VSMShadowMap, WebGLRenderer } from "three";
 import Stats from "stats.js";
+import AiDebugView from "@/ai/AiDebugView";
+import type NavGrid from "@/ai/NavGrid";
 import Entity from "@/entities/Entity";
 import EnemyTank from "@/entities/tanks/EnemyTank";
 import PlayerTank from "@/entities/tanks/PlayerTank";
@@ -25,7 +27,7 @@ class GameScene {
 
     private readonly _scene = new Scene();
     private readonly _clock = new Clock();
-    private readonly _entityManager = new EntityManager();
+    private readonly _entityManager = new EntityManager(MAP_SIZE);
     private readonly _levelManager = new LevelManager();
     private readonly _input = InputManager.instance;
 
@@ -33,6 +35,7 @@ class GameScene {
     private _cameraManager!: CameraManager;
     private _stats!: Stats;
     private _hud!: Hud;
+    private _aiDebug!: AiDebugView;
 
     private _player: PlayerTank | null = null;
     private _treads: TreadsCanvas | null = null;
@@ -53,6 +56,7 @@ class GameScene {
         window.addEventListener("resize", this.resize);
         document.addEventListener("visibilitychange", this.handleVisibilityChange);
         this._input.onKeyDown("Digit1", this.toggleCamera);
+        this._input.onKeyDown("Digit2", this.toggleAiDebug);
     }
 
     // ---- Setup ---------------------------------------------------------------------------
@@ -66,6 +70,7 @@ class GameScene {
         document.body.appendChild(this._stats.dom);
 
         this._hud = new Hud();
+        this._aiDebug = new AiDebugView(this._scene);
         this._cameraManager = new CameraManager(new OrthographicStrategy(this._renderer, MAP_SIZE));
 
         await ResourceManager.instance.load();
@@ -122,6 +127,15 @@ class GameScene {
         this._hud.flash(text);
     }
 
+    public get entities(): readonly Entity[] {
+        return this._entityManager.entities;
+    }
+
+    /** The AI's map knowledge: walkable tiles, path finding and line of sight. */
+    public get navGrid(): NavGrid {
+        return this._entityManager.navGrid;
+    }
+
     public get camera(): Camera {
         return this._cameraManager.camera;
     }
@@ -160,6 +174,7 @@ class GameScene {
         }
 
         this._entityManager.removeDisposed();
+        this._aiDebug.update(this._entityManager.entities);
 
         this._renderer.render(this._scene, this._cameraManager.camera);
         this._stats.end();
@@ -231,6 +246,11 @@ class GameScene {
         this._cameraManager.setStrategy(next);
         this._pausedByCamera = next.pausesGame;
         this._hud.flash(next.pausesGame ? "Free camera (paused)" : "Top-down camera");
+    };
+
+    private toggleAiDebug = (): void => {
+        if (!this._aiDebug) return; // Not loaded yet
+        this._hud.flash(this._aiDebug.toggle() ? "AI debug view on" : "AI debug view off");
     };
 
     private handleVisibilityChange = (): void => {

@@ -25,3 +25,10 @@ export const HIT_SHAKE = { duration: 0.3, intensity: 0.1 } as const;
 
 /** Seconds the win/lose message stays up before the next level starts. */
 export const LEVEL_TRANSITION_TIME = 2.5;
+
+/**
+ * Which enemy AI to use:
+ * - "tactical": patrols the map, paths around walls and only shoots with a clear line of fire
+ * - "basic": the original AI (random driving, shoots straight at the player)
+ */
+export const ENEMY_AI: "tactical" | "basic" = "tactical";

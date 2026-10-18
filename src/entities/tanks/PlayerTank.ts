@@ -6,10 +6,8 @@ import MissileShooter from "@/entities/tanks/weaponStrategies/MissileShooter";
 import LandminePlacer from "@/entities/tanks/weaponStrategies/LandminePlacer";
 import GameScene from "@/scene/GameScene";
 import InputManager, { type Unsubscribe } from "@/scene/managers/InputManager";
-import { stepAngleTowards, wrapAngle } from "@/utils/MathUtils";
 
 const ROTATION_SPEED = Math.PI * 4;
-const ALIGN_THRESHOLD = 0.01;
 
 class PlayerTank extends Tank {
     private readonly _bulletShooter = new BulletShooter();
@@ -21,7 +19,7 @@ class PlayerTank extends Tank {
     private _targetAngle: number | null = null;
     private readonly _unsubscribers: Unsubscribe[];
 
-    constructor(position: Vector3, speed = 3.5) {
+    constructor(position: Vector3, speed = 10) {
         super(position, speed);
 
         const input = InputManager.instance;
@@ -68,7 +66,7 @@ class PlayerTank extends Tank {
         return new Vector2(axis("KeyD", "KeyA"), axis("KeyS", "KeyW"));
     }
 
-    /** Turns towards the pressed direction first, then drives once aligned. */
+    /** Turns towards the pressed direction first (or reverses), then drives once aligned. */
     private updateMovement(deltaT: number): void {
         const direction = this.readDirection();
         const hasInput = direction.lengthSq() > 0;
@@ -76,8 +74,8 @@ class PlayerTank extends Tank {
 
         const desiredAngle = hasInput ? Math.atan2(direction.x, direction.y) : this._targetAngle!;
 
-        if (Math.abs(wrapAngle(desiredAngle - this._rotation)) > ALIGN_THRESHOLD) {
-            this.setBodyRotation(stepAngleTowards(this._rotation, desiredAngle, ROTATION_SPEED * deltaT));
+        // Turns towards the new direction, or flips to reverse if it's the exact opposite
+        if (!this.steerTowards(desiredAngle, ROTATION_SPEED * deltaT)) {
             this._targetAngle = desiredAngle;
             return;
         }
@@ -87,20 +85,8 @@ class PlayerTank extends Tank {
     }
 
     private drive(deltaT: number): void {
-        const movement = this.movementFor(deltaT);
-        if (this.canMove(movement)) {
-            this.applyMovement(movement);
-            return;
-        }
-
-        // Blocked: slide along the wall at half speed on whichever axis is free
-        const alongX = new Vector3(movement.x, 0, 0);
-        const alongY = new Vector3(0, movement.y, 0);
-        if (this.canMove(alongX)) {
-            this.applyMovement(alongX.multiplyScalar(0.5));
-        } else if (this.canMove(alongY)) {
-            this.applyMovement(alongY.multiplyScalar(0.5));
-        }
+        // When blocked, slide along the wall at half speed
+        this.moveWithSlide(this.movementFor(deltaT), 0.5);
     }
 }
 

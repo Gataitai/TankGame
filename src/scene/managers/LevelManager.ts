@@ -5,8 +5,9 @@ import BreakableWall from "@/map/BreakableWall";
 import GameMap from "@/map/GameMap";
 import TreadsCanvas from "@/map/TreadsCanvas";
 import PlayerTank from "@/entities/tanks/PlayerTank";
-import EnemyTank from "@/entities/tanks/EnemyTank";
-import { WALL_Z } from "@/config";
+import BasicEnemyTank from "@/entities/tanks/BasicEnemyTank";
+import TacticalEnemyTank from "@/entities/tanks/TacticalEnemyTank";
+import { ENEMY_AI, WALL_Z } from "@/config";
 
 type Spawn = <T extends Entity>(entity: T) => Promise<T>;
 
@@ -89,8 +90,9 @@ class LevelManager {
             new Vector3(3, mapSize - 4, 0),
             new Vector3(mapSize - 4, mapSize - 4, 0),
         ];
+        const EnemyClass = ENEMY_AI === "tactical" ? TacticalEnemyTank : BasicEnemyTank;
         for (const position of enemyStarts) {
-            pending.push(spawn(new EnemyTank(position)));
+            pending.push(spawn(new EnemyClass(position)));
         }
 
         await Promise.all(pending);

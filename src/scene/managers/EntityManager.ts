@@ -1,6 +1,7 @@
-import { Box3, Sphere } from "three";
+    import { Box3, Sphere } from "three";
 import Entity from "@/entities/Entity";
 import UpdatableEntity from "@/entities/UpdatableEntity";
+import NavGrid from "@/ai/NavGrid";
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 
@@ -14,11 +15,18 @@ const boundsOf = (collider: Box3 | Sphere): Bounds => {
  *
  * Static colliders (walls) live in a 1x1 grid so a query only checks nearby cells;
  * moving colliders (tanks, projectiles, mines) are few and are checked linearly.
+ * Walls are also registered in the NavGrid, which the AI uses to plan paths.
  */
 class EntityManager {
+    public readonly navGrid: NavGrid;
+
     private _entities: Entity[] = [];
     private _dynamicColliders: Entity[] = [];
     private _staticGrid = new Map<string, Entity[]>();
+
+    constructor(mapSize: number) {
+        this.navGrid = new NavGrid(mapSize);
+    }
 
     public get entities(): readonly Entity[] {
         return this._entities;
@@ -34,6 +42,7 @@ class EntityManager {
                 if (cell) cell.push(entity);
                 else this._staticGrid.set(key, [entity]);
             });
+            if (entity.blocksMovement) this.navGrid.block(entity.position);
         } else {
             this._dynamicColliders.push(entity);
         }
@@ -112,6 +121,7 @@ class EntityManager {
                 if (index >= 0) cell.splice(index, 1);
                 if (cell.length === 0) this._staticGrid.delete(key);
             });
+            if (entity.blocksMovement) this.navGrid.unblock(entity.position);
         } else {
             const index = this._dynamicColliders.indexOf(entity);
             if (index >= 0) this._dynamicColliders.splice(index, 1);
