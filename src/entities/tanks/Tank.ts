@@ -1,9 +1,13 @@
-import { Box3, Mesh, MeshStandardMaterial, Sphere, Vector3 } from "three";
+import { Box3, Mesh, MeshStandardMaterial, Quaternion, Sphere, Vector3 } from "three";
+import { Cylinder } from "cannon-es";
+import Entity from "@/entities/Entity";
 import UpdatableEntity from "@/entities/UpdatableEntity";
+import type { PhysicsDescription, PhysicsMode } from "@/physics/RigidBody";
+import type { Impact } from "@/physics/ObjectBreaker";
 import type WeaponStrategy from "@/entities/tanks/weaponStrategies/WeaponStrategy";
 import ExplosionEffect from "@/effects/ExplosionEffect";
 import DeathMarkEffect from "@/effects/DeathMarkEffect";
-import GameScene from "@/scene/GameScene";
+import TreadsCanvas from "@/map/TreadsCanvas";
 import ResourceManager from "@/utils/ResourceManager";
 import { markShared } from "@/utils/SharedResources";
 import { angleBetween, directionFromAngle, stepAngleTowards, wrapAngle } from "@/utils/MathUtils";
@@ -21,6 +25,19 @@ const TREAD_SPACING = 0.25;
 /** Headings closer than this (radians) count as equal. */
 const ALIGN_EPSILON = 1e-3;
 
+// ---- Physics
+const MASS = 10;
+/** Radius of the (upright cylinder) physics body. */
+const BODY_RADIUS = 0.42;
+/** Cannon-es cylinders stand along Y; this turns them along Z (up in this game). */
+const UPRIGHT = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2);
+/** Obstacles whose top is at most this far above the tank's bottom don't block it (it's on top of them). */
+const STEP_HEIGHT = 0.1;
+/** Above this upwards speed (e.g. jumping) a tank doesn't grip other tanks, so it can't get held down by them. */
+const GRIP_MAX_RISE_SPEED = 0.5;
+/** Treads are only drawn while the tank is (about) on the ground. */
+const TREAD_MAX_HEIGHT = 0.05;
+
 abstract class Tank extends UpdatableEntity {
     /** Body heading in radians, always kept in [-PI, PI]. */
     protected _rotation = 0;
@@ -33,15 +50,62 @@ abstract class Tank extends UpdatableEntity {
 
     private _distanceSinceLastTread = 0;
     private readonly _testSphere = new Sphere();
-
+    /** How far the tank moved during the current update, used to work out its velocity. */
+    private readonly _frameMovement = new Vector3();
+    private readonly _velocity = new Vector3();
     protected constructor(position: Vector3, moveSpeed: number) {
         super(position);
         this._moveSpeed = moveSpeed;
+        // Destroyed tanks shatter; the pieces disappear after a few seconds
+        this.breakSettings = { pieces: 14, lifetime: 3 };
+    }
+
+    /** Tanks are simulated: they push each other and physics objects, fall, and can land on things. */
+    public get defaultPhysics(): PhysicsMode {
+        return "dynamic";
     }
 
     public get turretRotation(): number {
         return this._turretRotation;
     }
+
+    /** Velocity over the last update (world units per second). Used e.g. to push physics objects. */
+    public get velocity(): Vector3 {
+        return this._velocity;
+    }
+
+    /** Runs the tank's own behaviour (input or AI), then hands the movement to its physics body. */
+    public update(deltaT: number): void {
+        this._frameMovement.set(0, 0, 0);
+        this.updateTank(deltaT);
+        if (deltaT > 0) this._velocity.copy(this._frameMovement).divideScalar(deltaT);
+        this.driveBody();
+    }
+
+    /**
+     * The tank drives by setting its body's velocity: the movement of this frame (already applied
+     * to the position, so the game logic sees it immediately) becomes the velocity for the physics
+     * step, which then lets it push or be pushed by other tanks and objects. The rotation is
+     * always controlled by the game.
+     *
+     * On the ground a tank that doesn't drive stands still; in the air it keeps its momentum
+     * unless it's steered. Tanks on the ground grip each other so pushing one moves it straight
+     * ahead; in the air they don't, so a tank jumping next to another isn't held back by it.
+     */
+    private driveBody(): void {
+        const rigidbody = this.rigidbody;
+        if (!rigidbody?.isDynamic) return;
+
+        const grounded = rigidbody.isGrounded;
+        rigidbody.setRotation(this.mesh.quaternion);
+        rigidbody.setSurface(grounded && rigidbody.velocity.z < GRIP_MAX_RISE_SPEED ? "vehicle" : "frictionless");
+        if (this._frameMovement.lengthSq() > 0 || grounded) {
+            rigidbody.setHorizontalVelocity(this._velocity.x, this._velocity.y);
+        }
+    }
+
+    /** The tank's behaviour for this frame: player input or AI. */
+    protected abstract updateTank(deltaT: number): void;
 
     public async load(): Promise<void> {
         const model = ResourceManager.instance.getModel("tank").scene.clone();
@@ -68,13 +132,37 @@ abstract class Tank extends UpdatableEntity {
         this.collider = new Sphere(new Vector3(this.position.x, this.position.y, bounds.center.z), bounds.radius * 0.5);
     }
 
-    /** Blows the tank up. Safe to call more than once. */
-    public destroy(): void {
-        if (this.shouldDispose) return;
-        this.shouldDispose = true;
+    /** An upright cylinder (frictionless, except against other tanks) whose rotation only the game changes (it never tips over). */
+    protected describePhysics(): PhysicsDescription {
+        const height = Math.max(0.3, this.localBounds(this.mesh).max.z);
+        return {
+            shape: new Cylinder(BODY_RADIUS, BODY_RADIUS, height, 32),
+            shapeRotation: UPRIGHT,
+            offset: new Vector3(0, 0, height / 2),
+            mass: MASS,
+            surface: "vehicle",
+            fixedRotation: true,
+            linearDamping: 0,
+            angularDamping: 0,
+            group: "default",
+        };
+    }
 
-        void GameScene.instance.spawn(new ExplosionEffect(this.position, 2));
-        void GameScene.instance.spawn(new DeathMarkEffect(this.position));
+    /** Whether the tank stands on something (the ground, a wall, another tank...). */
+    public get isGrounded(): boolean {
+        return this.rigidbody?.isGrounded ?? this.position.z <= TREAD_MAX_HEIGHT;
+    }
+
+    /** Blows the tank up: it shatters into pieces that disappear after a moment. Safe to call more than once. */
+    public destroy(impact?: Impact): void {
+        if (this.shouldDispose) return;
+
+        void this.scene.add(new ExplosionEffect(this.position, 2));
+        if (this.position.z <= TREAD_MAX_HEIGHT) {
+            void this.scene.add(new DeathMarkEffect(new Vector3(this.position.x, this.position.y, 0)));
+        }
+        this.break(impact);
+        this.shouldDispose = true; // In case it has no breakSettings
     }
 
     // ---- Helpers for subclasses ----------------------------------------------------------
@@ -128,7 +216,7 @@ abstract class Tank extends UpdatableEntity {
     protected fire(weapon: WeaponStrategy, angle = this._turretRotation): void {
         const muzzle = directionFromAngle(angle, MUZZLE_DISTANCE).add(this.position);
         muzzle.z = this.position.z + MUZZLE_HEIGHT;
-        weapon.spawn(muzzle, angle);
+        weapon.spawn(this.scene, muzzle, angle);
     }
 
     /** Movement vector for driving `deltaT` seconds along a heading (defaults to the travel direction). */
@@ -136,11 +224,21 @@ abstract class Tank extends UpdatableEntity {
         return directionFromAngle(heading, this._moveSpeed * deltaT);
     }
 
-    /** Whether the tank could move by `movement` without hitting anything solid. */
+    /**
+     * Whether the tank could move by `movement` without hitting anything solid. Things it's
+     * standing on top of (e.g. after jumping onto a wall) don't count.
+     */
     protected canMove(movement: Vector3): boolean {
         const test = this._testSphere.copy(this.collider as Sphere);
         test.center.add(movement);
-        return !GameScene.instance.queryColliders(test, this).some((entity) => entity.blocksMovement);
+        return !this.scene.queryColliders(test, this)
+            .some((entity) => entity.blocks(this, movement) && !this.isOnTopOf(entity));
+    }
+
+    private isOnTopOf(entity: Entity): boolean {
+        const collider = entity.collider;
+        const top = collider instanceof Box3 ? collider.max.z : collider ? collider.center.z + collider.radius : -Infinity;
+        return top <= this.position.z + STEP_HEIGHT;
     }
 
     /**
@@ -168,15 +266,18 @@ abstract class Tank extends UpdatableEntity {
 
     protected applyMovement(movement: Vector3): void {
         this.position.add(movement);
+        this._frameMovement.add(movement);
         (this.collider as Sphere).center.add(movement);
         this.leaveTreads(movement.length());
     }
 
     private leaveTreads(distance: number): void {
+        if (this.position.z > TREAD_MAX_HEIGHT) return; // In the air or on top of something
+
         this._distanceSinceLastTread += distance;
         if (this._distanceSinceLastTread < TREAD_SPACING) return;
 
-        GameScene.instance.treadsCanvas?.drawTreads(this.position, this._rotation);
+        this.scene.find(TreadsCanvas)?.drawTreads(this.position, this._rotation);
         this._distanceSinceLastTread = 0;
     }
 }

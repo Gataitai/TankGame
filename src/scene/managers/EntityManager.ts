@@ -34,7 +34,10 @@ class EntityManager {
 
     public add(entity: Entity): void {
         this._entities.push(entity);
+        this.index(entity);
+    }
 
+    private index(entity: Entity): void {
         if (!entity.collider) return;
         if (entity.isStatic) {
             this.forEachCell(boundsOf(entity.collider), (key) => {
@@ -48,12 +51,30 @@ class EntityManager {
         }
     }
 
+    /** Removes the entity from the collision structures, applies `change`, and files it again. */
+    public reindex(entity: Entity, change: () => void): void {
+        const known = this._entities.includes(entity);
+        if (known) this.unindex(entity);
+        change();
+        if (known) this.index(entity);
+    }
+
+    /** Runs update() on every entity. */
     public update(deltaT: number): void {
         // Entities spawned during this loop are added asynchronously (after load), so the array
         // doesn't change while we iterate it.
         for (const entity of this._entities) {
             if (entity instanceof UpdatableEntity && !entity.shouldDispose) {
                 entity.update(deltaT);
+            }
+        }
+    }
+
+    /** Runs lateUpdate() on every entity (after update() and the physics step). */
+    public lateUpdate(deltaT: number): void {
+        for (const entity of this._entities) {
+            if (entity instanceof UpdatableEntity && !entity.shouldDispose) {
+                entity.lateUpdate(deltaT);
             }
         }
     }
@@ -86,7 +107,7 @@ class EntityManager {
         const accept = (entity: Entity) =>
             entity !== exclude &&
             !entity.shouldDispose &&
-            entity.collider!.intersectsSphere(sphere);
+            entity.intersectsSphere(sphere);
 
         for (const entity of this._dynamicColliders) {
             if (accept(entity)) hits.push(entity);

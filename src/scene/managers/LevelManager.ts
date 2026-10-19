@@ -1,20 +1,12 @@
 import { Vector3 } from "three";
-import Entity from "@/entities/Entity";
 import Wall from "@/map/Wall";
 import BreakableWall from "@/map/BreakableWall";
-import GameMap from "@/map/GameMap";
-import TreadsCanvas from "@/map/TreadsCanvas";
+import { buildMapBase, uniquePositions } from "@/map/MapBuilder";
 import PlayerTank from "@/entities/tanks/PlayerTank";
 import BasicEnemyTank from "@/entities/tanks/BasicEnemyTank";
 import TacticalEnemyTank from "@/entities/tanks/TacticalEnemyTank";
+import type Scene from "@/scene/Scene";
 import { ENEMY_AI, WALL_Z } from "@/config";
-
-type Spawn = <T extends Entity>(entity: T) => Promise<T>;
-
-export type LevelEntities = {
-    player: PlayerTank;
-    treads: TreadsCanvas;
-};
 
 /**
  * Obstacle layouts, one per level (cycling). Each 5x5 pattern is stretched over the map;
@@ -53,7 +45,7 @@ const OBSTACLE_PATTERNS: string[][] = [
 
 const BREAKABLE_WALL_CHANCE = 0.5;
 
-/** Builds levels: ground, treads overlay, border, obstacles and tanks. Tracks the current level. */
+/** Knows the level layouts and builds them into a scene. Tracks the current level. */
 class LevelManager {
     private _level = 1;
 
@@ -69,49 +61,23 @@ class LevelManager {
         this._level = 1;
     }
 
-    public async build(spawn: Spawn, mapSize: number): Promise<LevelEntities> {
-        const center = new Vector3(mapSize / 2, mapSize / 2, 0);
-        const pending: Promise<unknown>[] = [];
-
-        pending.push(spawn(new GameMap(center)));
-        const treads = spawn(new TreadsCanvas(mapSize, center));
-
-        for (const position of this.borderPositions(mapSize)) {
-            pending.push(spawn(new Wall(position)));
-        }
-        for (const position of this.obstaclePositions(mapSize)) {
-            const wall = Math.random() < BREAKABLE_WALL_CHANCE ? new BreakableWall(position) : new Wall(position);
-            pending.push(spawn(wall));
-        }
-
-        const player = spawn(new PlayerTank(new Vector3(3, 3, 0)));
-        const enemyStarts = [
-            new Vector3(mapSize - 4, 3, 0),
-            new Vector3(3, mapSize - 4, 0),
-            new Vector3(mapSize - 4, mapSize - 4, 0),
-        ];
+    /** Builds the current level: map, obstacles, the player and the enemies. */
+    public async build(scene: Scene): Promise<void> {
+        const size = scene.mapSize;
         const EnemyClass = ENEMY_AI === "tactical" ? TacticalEnemyTank : BasicEnemyTank;
-        for (const position of enemyStarts) {
-            pending.push(spawn(new EnemyClass(position)));
-        }
+        const enemyStarts = [
+            new Vector3(size - 4, 3, 0),
+            new Vector3(3, size - 4, 0),
+            new Vector3(size - 4, size - 4, 0),
+        ];
 
-        await Promise.all(pending);
-        return { player: await player, treads: await treads };
-    }
-
-    private borderPositions(mapSize: number): Vector3[] {
-        const edge = mapSize - 1;
-        const positions = [new Vector3(edge, edge, WALL_Z)];
-        for (let i = 0; i < edge; i++) {
-            positions.push(
-                new Vector3(i, 0, WALL_Z),
-                new Vector3(0, i, WALL_Z),
-                new Vector3(edge, i, WALL_Z),
-                new Vector3(i, edge, WALL_Z)
-            );
-        }
-        // (0,0) is generated twice by the loop above; keep each tile once
-        return this.unique(positions);
+        await Promise.all([
+            buildMapBase(scene),
+            ...this.obstaclePositions(size).map((position) =>
+                scene.add(Math.random() < BREAKABLE_WALL_CHANCE ? new BreakableWall(position) : new Wall(position))),
+            scene.add(new PlayerTank(new Vector3(3, 3, 0))),
+            ...enemyStarts.map((position) => scene.add(new EnemyClass(position))),
+        ]);
     }
 
     private obstaclePositions(mapSize: number): Vector3[] {
@@ -151,17 +117,7 @@ class LevelManager {
         }
 
         // Filling gaps can produce the same tile twice, which used to stack two walls
-        return this.unique(positions);
-    }
-
-    private unique(positions: Vector3[]): Vector3[] {
-        const seen = new Set<string>();
-        return positions.filter((p) => {
-            const key = `${p.x},${p.y}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+        return uniquePositions(positions);
     }
 }
 

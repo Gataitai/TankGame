@@ -3,8 +3,8 @@ import UpdatableEntity from "@/entities/UpdatableEntity";
 import Tank from "@/entities/tanks/Tank";
 import BreakableWall from "@/map/BreakableWall";
 import ExplosionEffect from "@/effects/ExplosionEffect";
-import GameScene from "@/scene/GameScene";
 import { markShared } from "@/utils/SharedResources";
+import type Entity from "@/entities/Entity";
 import { HIT_SHAKE } from "@/config";
 
 const RADIUS = 0.2;
@@ -12,6 +12,8 @@ const FUSE_TIME = 5;        // seconds until it explodes by itself
 const BLINK_START = 1;      // start blinking this many seconds before exploding
 const BLINK_INTERVAL = 0.1;
 const BLAST_RADIUS = 2;
+/** Impulse given to physics bodies at the centre of the blast (less further away). */
+const BLAST_IMPULSE = 10;
 const COLOR = 0xffff00;
 const BLINK_COLOR = 0xfc4c4c;
 
@@ -61,21 +63,35 @@ class Landmine extends UpdatableEntity {
         this._triggered = true;
     }
 
+    /** Pushes away from the mine (and a bit up), weaker towards the edge of the blast. */
+    private blastImpulse(entity: Entity): Vector3 {
+        const away = entity.position.clone().sub(this.position).setZ(0);
+        const falloff = Math.max(0, 1 - away.length() / BLAST_RADIUS);
+        away.normalize();
+        away.z = 0.5;
+        return away.normalize().multiplyScalar(BLAST_IMPULSE * (0.3 + 0.7 * falloff));
+    }
+
     private explode(): void {
         if (this.shouldDispose) return;
         this.shouldDispose = true;
 
         const blast = new Sphere(this.position.clone(), BLAST_RADIUS);
-        for (const entity of GameScene.instance.queryColliders(blast, this)) {
+        for (const entity of this.scene.queryColliders(blast, this)) {
+            const impact = { point: this.position.clone(), direction: entity.position.clone().sub(this.position), strength: BLAST_IMPULSE };
             if (entity instanceof Tank || entity instanceof BreakableWall) {
-                entity.destroy();
+                entity.destroy(impact);
             } else if (entity instanceof Landmine) {
                 entity.trigger(); // Chain reaction
+            } else if (entity.breakSettings?.breaksOnImpact) {
+                entity.break(impact);
+            } else if (entity.rigidbody?.isDynamic) {
+                entity.rigidbody.applyImpulse(this.blastImpulse(entity));
             }
         }
 
-        void GameScene.instance.spawn(new ExplosionEffect(this.position, 2));
-        GameScene.instance.shakeCamera(HIT_SHAKE.duration, HIT_SHAKE.intensity);
+        void this.scene.add(new ExplosionEffect(this.position, 2));
+        this.scene.shakeCamera(HIT_SHAKE.duration, HIT_SHAKE.intensity);
     }
 }
 

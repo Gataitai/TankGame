@@ -2,7 +2,6 @@ import { Vector2, Vector3 } from "three";
 import Entity from "@/entities/Entity";
 import Projectile from "@/entities/weapons/Projectile";
 import BreakableWall from "@/map/BreakableWall";
-import GameScene from "@/scene/GameScene";
 import InputManager from "@/scene/managers/InputManager";
 import { HIT_SHAKE, PROJECTILE_Z } from "@/config";
 
@@ -14,6 +13,7 @@ const ARRIVAL_DISTANCE_SQ = 0.5;
  * Destroys breakable walls.
  */
 class Missile extends Projectile {
+    protected readonly kickStrength = 12;
     private _lifetime = LIFETIME;
     private _followMouse = false;
     private readonly _launchMousePosition: Vector2;
@@ -37,7 +37,7 @@ class Missile extends Projectile {
         }
 
         if (this._followMouse) {
-            this._target.copy(GameScene.instance.mouseWorldPosition);
+            this._target.copy(this.scene.mouseWorldPosition);
         } else {
             // Aim far ahead so it keeps flying straight
             this._target.copy(this.position).addScaledVector(this._velocity, 10);
@@ -57,8 +57,8 @@ class Missile extends Projectile {
 
     protected onHitObstacle(obstacle: Entity): void {
         if (obstacle instanceof BreakableWall) {
-            obstacle.destroy();
-            GameScene.instance.shakeCamera(HIT_SHAKE.duration, HIT_SHAKE.intensity);
+            obstacle.destroy(this.impact);
+            this.scene.shakeCamera(HIT_SHAKE.duration, HIT_SHAKE.intensity);
         }
         this.explodeAndDispose();
     }

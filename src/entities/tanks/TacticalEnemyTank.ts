@@ -1,11 +1,10 @@
 import { Vector3 } from "three";
 import EnemyTank from "@/entities/tanks/EnemyTank";
-import type PlayerTank from "@/entities/tanks/PlayerTank";
+import PlayerTank from "@/entities/tanks/PlayerTank";
 import { MUZZLE_DISTANCE } from "@/entities/tanks/Tank";
 import { BULLET_SPEED } from "@/entities/weapons/Bullet";
 import { createPatrolRoute } from "@/ai/PatrolRoute";
 import NavGrid, { type PathStep } from "@/ai/NavGrid";
-import GameScene from "@/scene/GameScene";
 import {
     angleBetween,
     directionFromAngle,
@@ -158,7 +157,7 @@ class TacticalEnemyTank extends EnemyTank {
     }
 
     protected think(deltaT: number): void {
-        const player = GameScene.instance.player;
+        const player = this.scene.find(PlayerTank);
         this.perceive(player, deltaT);
 
         const next = this.decideState(player);
@@ -203,7 +202,7 @@ class TacticalEnemyTank extends EnemyTank {
             this._sightTimer = SIGHT_CHECK_INTERVAL;
             const distance = this.position.distanceTo(player.position);
             this._canSeePlayer = distance <= SIGHT_RANGE
-                && GameScene.instance.navGrid.isSegmentClear(this.position, player.position, SIGHT_RADIUS);
+                && this.scene.navGrid.isSegmentClear(this.position, player.position, SIGHT_RADIUS);
             this._awareOfPlayer = this._canSeePlayer || distance <= HEARING_RANGE;
         }
 
@@ -244,7 +243,7 @@ class TacticalEnemyTank extends EnemyTank {
 
     private patrol(deltaT: number): void {
         if (this._route.length === 0) {
-            this._route = createPatrolRoute(GameScene.instance.navGrid, this.position);
+            this._route = createPatrolRoute(this.scene.navGrid, this.position);
             this._routeIndex = 0;
             if (this._route.length === 0) return; // No open space at all; just stand guard
         }
@@ -330,7 +329,7 @@ class TacticalEnemyTank extends EnemyTank {
      * Returns null if there is none.
      */
     private pickFiringPosition(player: PlayerTank): Vector3 | null {
-        const grid = GameScene.instance.navGrid;
+        const grid = this.scene.navGrid;
         const here = grid.tileOf(this.position);
         const occupied = this.tilesOccupiedByOtherEnemies();
         const candidates: Vector3[] = [];
@@ -367,7 +366,7 @@ class TacticalEnemyTank extends EnemyTank {
         aim.z = 0;
 
         // Leading into a wall is pointless; aim straight at the player instead
-        return GameScene.instance.navGrid.isSegmentClear(this.position, aim, SIGHT_RADIUS)
+        return this.scene.navGrid.isSegmentClear(this.position, aim, SIGHT_RADIUS)
             ? aim
             : player.position.clone();
     }
@@ -375,9 +374,9 @@ class TacticalEnemyTank extends EnemyTank {
     /** The bullet's path from the barrel to the target must be free of walls and friendly tanks. */
     private hasClearShot(target: Vector3, angle: number): boolean {
         const muzzle = directionFromAngle(angle, MUZZLE_DISTANCE).add(this.position);
-        if (!GameScene.instance.navGrid.isSegmentClear(muzzle, target, SIGHT_RADIUS)) return false;
+        if (!this.scene.navGrid.isSegmentClear(muzzle, target, SIGHT_RADIUS)) return false;
 
-        for (const entity of GameScene.instance.entities) {
+        for (const entity of this.scene.entities) {
             if (!(entity instanceof EnemyTank) || entity === this || entity.shouldDispose) continue;
             if (distanceToSegment2D(entity.position, this.position, target) < FRIENDLY_CLEARANCE) return false;
         }
@@ -407,7 +406,7 @@ class TacticalEnemyTank extends EnemyTank {
         this._stopAtNextTile = false;
         this._repathTimer -= deltaT;
 
-        const grid = GameScene.instance.navGrid;
+        const grid = this.scene.navGrid;
         if (this._path.length === 0 || this._forceRepath) {
             this.planPath(goal);
         } else if (this._repathTimer <= 0
@@ -432,7 +431,7 @@ class TacticalEnemyTank extends EnemyTank {
     }
 
     private planPath(goal: Vector3): void {
-        const grid = GameScene.instance.navGrid;
+        const grid = this.scene.navGrid;
         const occupied = this.tilesOccupiedByOtherEnemies();
         const steps = grid.findPath(this.position, goal, (x, y) => (occupied.has(`${x},${y}`) ? OCCUPIED_TILE_COST : 0));
 
@@ -447,9 +446,9 @@ class TacticalEnemyTank extends EnemyTank {
     }
 
     private tilesOccupiedByOtherEnemies(): Set<string> {
-        const grid = GameScene.instance.navGrid;
+        const grid = this.scene.navGrid;
         const tiles = new Set<string>();
-        for (const entity of GameScene.instance.entities) {
+        for (const entity of this.scene.entities) {
             if (entity instanceof EnemyTank && entity !== this && !entity.shouldDispose) {
                 const { x, y } = grid.tileOf(entity.position);
                 tiles.add(`${x},${y}`);

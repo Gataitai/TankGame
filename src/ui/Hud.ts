@@ -1,22 +1,29 @@
-/** Minimal DOM overlay for level info, end-of-level messages and short notifications. */
+/** Minimal DOM overlay: a status line (level, kills...), big messages and short notifications. */
 class Hud {
     private readonly _root = document.createElement("div");
-    private readonly _level = document.createElement("div");
+    private readonly _status = document.createElement("div");
     private readonly _message = document.createElement("div");
     private readonly _toast = document.createElement("div");
     private _toastTimer?: number;
 
     constructor() {
         this._root.className = "hud";
-        this._level.className = "hud-level";
+        this._status.className = "hud-status";
         this._message.className = "hud-message";
         this._toast.className = "hud-toast";
-        this._root.append(this._level, this._message, this._toast);
+        this._root.append(this._status, this._message, this._toast);
         document.body.appendChild(this._root);
     }
 
-    public setLevel(level: number): void {
-        this._level.textContent = `Level ${level}`;
+    /** Text in the top-right corner, e.g. "Level 2" or "Kills: 5". */
+    public setStatus(text: string): void {
+        this._status.textContent = text;
+    }
+
+    /** Clears everything (used when switching scenes). */
+    public reset(): void {
+        this.setStatus("");
+        this.hideMessage();
     }
 
     public showMessage(text: string): void {
