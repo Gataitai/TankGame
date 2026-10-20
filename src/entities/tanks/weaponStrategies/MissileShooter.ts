@@ -1,19 +1,18 @@
 import { Vector3 } from "three";
+import type Scene from "@/scene/Scene";
 import WeaponStrategy from "./WeaponStrategy";
 import Missile from "@/entities/weapons/Missile";
 import FireEffect from "@/effects/FireEffect";
-import GameScene from "@/scene/GameScene";
 
 class MissileShooter implements WeaponStrategy {
     private readonly _reloadTime = 5; // seconds
     private _reloadRemaining = 0;
 
-    public spawn(position: Vector3, rotation: number): void {
+    public spawn(scene: Scene, position: Vector3, rotation: number): void {
         if (this._reloadRemaining > 0) return;
 
-        const scene = GameScene.instance;
-        void scene.spawn(new Missile(position, rotation));
-        void scene.spawn(new FireEffect(position, rotation));
+        void scene.add(new Missile(position, rotation));
+        void scene.add(new FireEffect(position, rotation));
         this._reloadRemaining = this._reloadTime;
     }
 

@@ -1,6 +1,6 @@
 import { Vector3 } from "three";
 import EnemyTank from "@/entities/tanks/EnemyTank";
-import GameScene from "@/scene/GameScene";
+import PlayerTank from "@/entities/tanks/PlayerTank";
 import { angleBetween, randomIntInRange, randomSign, stepAngleTowards, wrapAngle } from "@/utils/MathUtils";
 
 enum TankState {
@@ -40,7 +40,7 @@ class BasicEnemyTank extends EnemyTank {
     protected think(deltaT: number): void {
         this._timeSinceDirectionChange += deltaT;
 
-        const target = GameScene.instance.player?.position ?? null;
+        const target = this.scene.find(PlayerTank)?.position ?? null;
         this._state = this.decideState(target);
 
         switch (this._state) {

@@ -4,10 +4,11 @@ import type WeaponStrategy from "@/entities/tanks/weaponStrategies/WeaponStrateg
 import BulletShooter from "@/entities/tanks/weaponStrategies/BulletShooter";
 import MissileShooter from "@/entities/tanks/weaponStrategies/MissileShooter";
 import LandminePlacer from "@/entities/tanks/weaponStrategies/LandminePlacer";
-import GameScene from "@/scene/GameScene";
 import InputManager, { type Unsubscribe } from "@/scene/managers/InputManager";
 
 const ROTATION_SPEED = Math.PI * 4;
+/** Upwards speed of a jump; high enough to land on top of a wall. */
+const JUMP_SPEED = 5.5;
 
 class PlayerTank extends Tank {
     private readonly _bulletShooter = new BulletShooter();
@@ -17,26 +18,32 @@ class PlayerTank extends Tank {
 
     /** Heading the tank keeps turning towards after the keys are released. */
     private _targetAngle: number | null = null;
-    private readonly _unsubscribers: Unsubscribe[];
+    private _unsubscribers: Unsubscribe[] = [];
 
     constructor(position: Vector3, speed = 10) {
         super(position, speed);
+    }
 
+    public async load(): Promise<void> {
+        await super.load();
+
+        // Listen to input only once the tank is actually in a scene
         const input = InputManager.instance;
         this._unsubscribers = [
             input.onMouseUp(() => this.whenActive(() => this.fire(this._primaryWeapon))),
-            input.onRightMouseUp(() => this.whenActive(() => this._minePlacer.spawn(this.position.clone()))),
+            input.onRightMouseUp(() => this.whenActive(() => this._minePlacer.spawn(this.scene, this.position.clone()))),
             input.onWheel((deltaY) => this.whenActive(() => this.switchWeapon(deltaY))),
+            input.onKeyDown("Space", () => this.whenActive(() => this.jump())),
         ];
     }
 
-    public update(deltaT: number): void {
+    protected updateTank(deltaT: number): void {
         this._bulletShooter.update();
         this._missileShooter.update(deltaT);
         this._minePlacer.update();
 
         this.updateMovement(deltaT);
-        this.aimTurretAt(GameScene.instance.mouseWorldPosition);
+        this.aimTurretAt(this.scene.mouseWorldPosition);
     }
 
     public dispose(): void {
@@ -46,7 +53,14 @@ class PlayerTank extends Tank {
 
     /** Ignores input while the game is paused or the tank is dead. */
     private whenActive(action: () => void): void {
-        if (!GameScene.instance.paused && !this.shouldDispose) action();
+        if (!this.scene.paused && !this.shouldDispose) action();
+    }
+
+    /** Jumps, but only when standing on something (no double jumps). */
+    private jump(): void {
+        if (!this.rigidbody?.isDynamic || !this.isGrounded) return;
+        this.rigidbody.setSurface("frictionless"); // Don't stick to a tank it's touching
+        this.rigidbody.setVerticalVelocity(JUMP_SPEED);
     }
 
     private switchWeapon(deltaY: number): void {
@@ -54,7 +68,7 @@ class PlayerTank extends Tank {
         if (next === this._primaryWeapon) return;
 
         this._primaryWeapon = next;
-        GameScene.instance.notify(next === this._bulletShooter ? "Bullets" : "Missiles");
+        this.scene.hud.flash(next === this._bulletShooter ? "Bullets" : "Missiles");
     }
 
     private readDirection(): Vector2 {
