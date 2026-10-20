@@ -19,6 +19,12 @@ import { directionFromAngle } from "@/utils/MathUtils";
 import { HIT_SHAKE } from "@/config";
 import EnemyTank from "@/entities/tanks/EnemyTank";
 
+/** Impulse given to physics objects that are hit (and survive). */
+const HIT_IMPULSE = 0.6;
+/** The small blast of a projectile exploding nudges loose objects and pieces nearby. */
+const BLAST_RADIUS = 1.2;
+const BLAST_STRENGTH = 0.5;
+
 const RADIUS = 0.075;
 const BODY_LENGTH = 0.2;
 const SEGMENTS = 16;
@@ -97,9 +103,13 @@ abstract class Projectile extends UpdatableEntity {
         if (this.shouldDispose) return;
         this.shouldDispose = true;
         void GameScene.instance.spawn(new ExplosionEffect(this.position, 1));
+        GameScene.instance.physics.explode(this.position, BLAST_RADIUS, BLAST_STRENGTH);
     }
 
-    /** Called when hitting something that isn't a projectile, mine or tank (i.e. a wall). */
+    /**
+     * Called when hitting something that isn't a projectile, mine, enemy tank or fragile object
+     * (walls, sturdy props and the player's tank).
+     */
     protected onHitObstacle(_obstacle: Entity): void {
         this.explodeAndDispose();
     }
@@ -114,6 +124,10 @@ abstract class Projectile extends UpdatableEntity {
         const hit = GameScene.instance.queryColliders(this.collider as Sphere, this)[0];
         if (!hit) return;
 
+        if (hit.body && hit.isDynamic) {
+            GameScene.instance.physics.push(hit.body, this._velocity, HIT_IMPULSE);
+        }
+
         if (hit instanceof Projectile) {
             hit.explodeAndDispose();
             this.explodeAndDispose();
@@ -121,9 +135,12 @@ abstract class Projectile extends UpdatableEntity {
             hit.trigger();
             this.explodeAndDispose();
         } else if (hit instanceof EnemyTank) {
-            hit.destroy();
+            hit.destroy(this.position);
             this.explodeAndDispose();
             GameScene.instance.shakeCamera(HIT_SHAKE.duration, HIT_SHAKE.intensity);
+        } else if (hit.destructible && hit.fragile) {
+            hit.destroy(this.position);
+            this.explodeAndDispose();
         } else {
             this.onHitObstacle(hit);
         }

@@ -1,22 +1,23 @@
-/** Minimal DOM overlay for level info, end-of-level messages and short notifications. */
+/** Minimal DOM overlay for the scene/level title, end-of-level messages and short notifications. */
 class Hud {
     private readonly _root = document.createElement("div");
-    private readonly _level = document.createElement("div");
+    private readonly _title = document.createElement("div");
     private readonly _message = document.createElement("div");
     private readonly _toast = document.createElement("div");
     private _toastTimer?: number;
 
     constructor() {
         this._root.className = "hud";
-        this._level.className = "hud-level";
+        this._title.className = "hud-level";
         this._message.className = "hud-message";
         this._toast.className = "hud-toast";
-        this._root.append(this._level, this._message, this._toast);
+        this._root.append(this._title, this._message, this._toast);
         document.body.appendChild(this._root);
     }
 
-    public setLevel(level: number): void {
-        this._level.textContent = `Level ${level}`;
+    /** Text in the top right corner, e.g. "Level 3". */
+    public setTitle(text: string): void {
+        this._title.textContent = text;
     }
 
     public showMessage(text: string): void {

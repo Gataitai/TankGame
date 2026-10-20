@@ -1,7 +1,8 @@
-    import { Box3, Sphere } from "three";
+import { Box3, Sphere } from "three";
 import Entity from "@/entities/Entity";
 import UpdatableEntity from "@/entities/UpdatableEntity";
 import NavGrid from "@/ai/NavGrid";
+import PhysicsWorld from "@/physics/PhysicsWorld";
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 
@@ -11,14 +12,18 @@ const boundsOf = (collider: Box3 | Sphere): Bounds => {
 };
 
 /**
- * Owns the list of live entities and answers collision queries.
+ * Owns the list of live entities, the physics world and answers collision queries.
  *
  * Static colliders (walls) live in a 1x1 grid so a query only checks nearby cells;
- * moving colliders (tanks, projectiles, mines) are few and are checked linearly.
+ * moving colliders (tanks, projectiles, mines, physics props) are few and are checked linearly.
  * Walls are also registered in the NavGrid, which the AI uses to plan paths.
+ *
+ * Every frame: entities update (tanks decide where to drive), then physics steps, then the
+ * meshes of physics-driven entities are moved to their bodies.
  */
 class EntityManager {
     public readonly navGrid: NavGrid;
+    public readonly physics = new PhysicsWorld();
 
     private _entities: Entity[] = [];
     private _dynamicColliders: Entity[] = [];
@@ -34,8 +39,10 @@ class EntityManager {
 
     public add(entity: Entity): void {
         this._entities.push(entity);
+        if (entity.body) this.physics.add(entity, entity.body);
 
         if (!entity.collider) return;
+        entity.captureColliderOffset();
         if (entity.isStatic) {
             this.forEachCell(boundsOf(entity.collider), (key) => {
                 const cell = this._staticGrid.get(key);
@@ -56,15 +63,26 @@ class EntityManager {
                 entity.update(deltaT);
             }
         }
+
+        for (const entity of this._entities) {
+            if (entity.body && !entity.shouldDispose) entity.beforePhysicsStep(deltaT);
+        }
+        this.physics.step(deltaT);
+        for (const entity of this._entities) {
+            if (entity.body && !entity.shouldDispose) entity.afterPhysicsStep(deltaT);
+        }
     }
 
-    /** Removes and disposes every entity flagged with shouldDispose. */
-    public removeDisposed(): Entity[] {
-        return this.removeWhere((entity) => entity.shouldDispose);
+    /**
+     * Removes and disposes every entity flagged with shouldDispose. `beforeDispose` is called for
+     * each of them while it's still intact (used to break destroyed entities into pieces).
+     */
+    public removeDisposed(beforeDispose?: (entity: Entity) => void): Entity[] {
+        return this.removeWhere((entity) => entity.shouldDispose, beforeDispose);
     }
 
     /** Removes and disposes every entity matching the predicate. */
-    public removeWhere(predicate: (entity: Entity) => boolean): Entity[] {
+    public removeWhere(predicate: (entity: Entity) => boolean, beforeDispose?: (entity: Entity) => void): Entity[] {
         const removed: Entity[] = [];
         this._entities = this._entities.filter((entity) => {
             if (!predicate(entity)) return true;
@@ -74,6 +92,7 @@ class EntityManager {
 
         for (const entity of removed) {
             entity.shouldDispose = true;
+            beforeDispose?.(entity);
             this.unindex(entity);
             entity.dispose();
         }
@@ -86,7 +105,7 @@ class EntityManager {
         const accept = (entity: Entity) =>
             entity !== exclude &&
             !entity.shouldDispose &&
-            entity.collider!.intersectsSphere(sphere);
+            entity.intersectsSphere(sphere);
 
         for (const entity of this._dynamicColliders) {
             if (accept(entity)) hits.push(entity);
@@ -111,6 +130,10 @@ class EntityManager {
     }
 
     private unindex(entity: Entity): void {
+        if (entity.body) {
+            this.physics.remove(entity.body);
+            entity.body = null;
+        }
         if (!entity.collider) return;
 
         if (entity.isStatic) {

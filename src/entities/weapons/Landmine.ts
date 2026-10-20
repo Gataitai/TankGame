@@ -1,7 +1,5 @@
 import { Box3, Mesh, MeshStandardMaterial, Sphere, SphereGeometry, Vector3 } from "three";
 import UpdatableEntity from "@/entities/UpdatableEntity";
-import Tank from "@/entities/tanks/Tank";
-import BreakableWall from "@/map/BreakableWall";
 import ExplosionEffect from "@/effects/ExplosionEffect";
 import GameScene from "@/scene/GameScene";
 import { markShared } from "@/utils/SharedResources";
@@ -12,6 +10,11 @@ const FUSE_TIME = 5;        // seconds until it explodes by itself
 const BLINK_START = 1;      // start blinking this many seconds before exploding
 const BLINK_INTERVAL = 0.1;
 const BLAST_RADIUS = 2;
+/** Loose objects further away are still pushed by the blast. */
+const PUSH_RADIUS = 3.5;
+const PUSH_STRENGTH = 6;
+/** How fast the pieces of things it destroys fly apart. */
+const BREAK_FORCE = 6;
 const COLOR = 0xffff00;
 const BLINK_COLOR = 0xfc4c4c;
 
@@ -67,12 +70,13 @@ class Landmine extends UpdatableEntity {
 
         const blast = new Sphere(this.position.clone(), BLAST_RADIUS);
         for (const entity of GameScene.instance.queryColliders(blast, this)) {
-            if (entity instanceof Tank || entity instanceof BreakableWall) {
-                entity.destroy();
-            } else if (entity instanceof Landmine) {
+            if (entity instanceof Landmine) {
                 entity.trigger(); // Chain reaction
+            } else if (entity.destructible) {
+                entity.destroy(this.position, BREAK_FORCE); // Tanks, breakable walls, props...
             }
         }
+        GameScene.instance.physics.explode(this.position, PUSH_RADIUS, PUSH_STRENGTH);
 
         void GameScene.instance.spawn(new ExplosionEffect(this.position, 2));
         GameScene.instance.shakeCamera(HIT_SHAKE.duration, HIT_SHAKE.intensity);

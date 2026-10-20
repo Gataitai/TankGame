@@ -2,19 +2,14 @@ import { Vector3 } from "three";
 import Entity from "@/entities/Entity";
 import Wall from "@/map/Wall";
 import BreakableWall from "@/map/BreakableWall";
-import GameMap from "@/map/GameMap";
-import TreadsCanvas from "@/map/TreadsCanvas";
 import PlayerTank from "@/entities/tanks/PlayerTank";
+import EnemyTank from "@/entities/tanks/EnemyTank";
 import BasicEnemyTank from "@/entities/tanks/BasicEnemyTank";
 import TacticalEnemyTank from "@/entities/tanks/TacticalEnemyTank";
+import type Stage from "@/scene/stages/Stage";
+import type { Spawn, StageEntities } from "@/scene/stages/Stage";
+import { buildArena, uniquePositions } from "@/scene/stages/Arena";
 import { ENEMY_AI, WALL_Z } from "@/config";
-
-type Spawn = <T extends Entity>(entity: T) => Promise<T>;
-
-export type LevelEntities = {
-    player: PlayerTank;
-    treads: TreadsCanvas;
-};
 
 /**
  * Obstacle layouts, one per level (cycling). Each 5x5 pattern is stretched over the map;
@@ -53,32 +48,21 @@ const OBSTACLE_PATTERNS: string[][] = [
 
 const BREAKABLE_WALL_CHANCE = 0.5;
 
-/** Builds levels: ground, treads overlay, border, obstacles and tanks. Tracks the current level. */
-class LevelManager {
+/**
+ * The game itself: destroy every enemy tank to get to the next level; when the player is destroyed
+ * it starts over at level 1.
+ */
+class BattleStage implements Stage {
+    public readonly name = "Battle";
     private _level = 1;
 
-    public get level(): number {
-        return this._level;
+    public get title(): string {
+        return `Level ${this._level}`;
     }
 
-    public advance(): void {
-        this._level++;
-    }
+    public async build(spawn: Spawn, mapSize: number): Promise<StageEntities> {
+        const { treads, pending } = buildArena(spawn, mapSize);
 
-    public reset(): void {
-        this._level = 1;
-    }
-
-    public async build(spawn: Spawn, mapSize: number): Promise<LevelEntities> {
-        const center = new Vector3(mapSize / 2, mapSize / 2, 0);
-        const pending: Promise<unknown>[] = [];
-
-        pending.push(spawn(new GameMap(center)));
-        const treads = spawn(new TreadsCanvas(mapSize, center));
-
-        for (const position of this.borderPositions(mapSize)) {
-            pending.push(spawn(new Wall(position)));
-        }
         for (const position of this.obstaclePositions(mapSize)) {
             const wall = Math.random() < BREAKABLE_WALL_CHANCE ? new BreakableWall(position) : new Wall(position);
             pending.push(spawn(wall));
@@ -99,19 +83,20 @@ class LevelManager {
         return { player: await player, treads: await treads };
     }
 
-    private borderPositions(mapSize: number): Vector3[] {
-        const edge = mapSize - 1;
-        const positions = [new Vector3(edge, edge, WALL_Z)];
-        for (let i = 0; i < edge; i++) {
-            positions.push(
-                new Vector3(i, 0, WALL_Z),
-                new Vector3(0, i, WALL_Z),
-                new Vector3(edge, i, WALL_Z),
-                new Vector3(i, edge, WALL_Z)
-            );
-        }
-        // (0,0) is generated twice by the loop above; keep each tile once
-        return this.unique(positions);
+    public isCleared(entities: readonly Entity[]): boolean {
+        return !entities.some((entity) => entity instanceof EnemyTank && !entity.shouldDispose);
+    }
+
+    public onCleared(): string {
+        const message = `Level ${this._level} cleared!`;
+        this._level++;
+        return message;
+    }
+
+    public onFailed(): string {
+        const message = `Destroyed on level ${this._level}`;
+        this._level = 1;
+        return message;
     }
 
     private obstaclePositions(mapSize: number): Vector3[] {
@@ -151,18 +136,8 @@ class LevelManager {
         }
 
         // Filling gaps can produce the same tile twice, which used to stack two walls
-        return this.unique(positions);
-    }
-
-    private unique(positions: Vector3[]): Vector3[] {
-        const seen = new Set<string>();
-        return positions.filter((p) => {
-            const key = `${p.x},${p.y}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+        return uniquePositions(positions);
     }
 }
 
-export default LevelManager;
+export default BattleStage;

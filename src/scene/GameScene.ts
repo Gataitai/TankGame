@@ -3,14 +3,17 @@ import Stats from "stats.js";
 import AiDebugView from "@/ai/AiDebugView";
 import type NavGrid from "@/ai/NavGrid";
 import Entity from "@/entities/Entity";
-import EnemyTank from "@/entities/tanks/EnemyTank";
 import PlayerTank from "@/entities/tanks/PlayerTank";
 import TreadsCanvas from "@/map/TreadsCanvas";
 import CameraManager from "@/scene/managers/CameraManager";
 import EntityManager from "@/scene/managers/EntityManager";
 import InputManager from "@/scene/managers/InputManager";
-import LevelManager from "@/scene/managers/LevelManager";
 import LightingManager from "@/scene/managers/LightingManager";
+import type Stage from "@/scene/stages/Stage";
+import BattleStage from "@/scene/stages/BattleStage";
+import PlaygroundStage from "@/scene/stages/PlaygroundStage";
+import type PhysicsWorld from "@/physics/PhysicsWorld";
+import { shatter } from "@/physics/Shatter";
 import OrthographicStrategy from "@/scene/cameraStrategies/OrthographicStrategy";
 import PerspectiveStrategy from "@/scene/cameraStrategies/PerspectiveStrategy";
 import Hud from "@/ui/Hud";
@@ -28,8 +31,11 @@ class GameScene {
     private readonly _scene = new Scene();
     private readonly _clock = new Clock();
     private readonly _entityManager = new EntityManager(MAP_SIZE);
-    private readonly _levelManager = new LevelManager();
     private readonly _input = InputManager.instance;
+
+    /** The scenes that N cycles through. */
+    private readonly _stages: Stage[] = [new BattleStage(), new PlaygroundStage()];
+    private _stageIndex = 0;
 
     private _renderer!: WebGLRenderer;
     private _cameraManager!: CameraManager;
@@ -57,6 +63,7 @@ class GameScene {
         document.addEventListener("visibilitychange", this.handleVisibilityChange);
         this._input.onKeyDown("Digit1", this.toggleCamera);
         this._input.onKeyDown("Digit2", this.toggleAiDebug);
+        this._input.onKeyDown("KeyN", this.nextStage);
     }
 
     // ---- Setup ---------------------------------------------------------------------------
@@ -115,6 +122,12 @@ class GameScene {
         return entity;
     };
 
+    /** Adds an entity that's already loaded right away (not at the end of an await). */
+    private addLoaded(entity: Entity): void {
+        this._entityManager.add(entity);
+        this._scene.add(entity.mesh);
+    }
+
     public queryColliders(sphere: Sphere, exclude?: Entity): Entity[] {
         return this._entityManager.queryColliders(sphere, exclude);
     }
@@ -129,6 +142,16 @@ class GameScene {
 
     public get entities(): readonly Entity[] {
         return this._entityManager.entities;
+    }
+
+    /** The physics simulation (cannon-es). */
+    public get physics(): PhysicsWorld {
+        return this._entityManager.physics;
+    }
+
+    /** The scene being played. */
+    public get stage(): Stage {
+        return this._stages[this._stageIndex];
     }
 
     /** The AI's map knowledge: walkable tiles, path finding and line of sight. */
@@ -173,11 +196,20 @@ class GameScene {
             this.updateLevelState(deltaT);
         }
 
-        this._entityManager.removeDisposed();
+        this._entityManager.removeDisposed(this.breakApart);
         this._aiDebug.update(this._entityManager.entities);
 
         this._renderer.render(this._scene, this._cameraManager.camera);
         this._stats.end();
+    };
+
+    /** Replaces a destroyed entity by pieces made from its meshes, in the same frame. */
+    private breakApart = (entity: Entity): void => {
+        if (!entity.impact) return;
+        for (const shard of shatter(entity)) {
+            shard.build();
+            this.addLoaded(shard);
+        }
     };
 
     private updateMouseWorldPosition(): void {
@@ -191,9 +223,9 @@ class GameScene {
     private async startLevel(): Promise<void> {
         this._levelState = "loading";
         this._hud.hideMessage();
-        this._hud.setLevel(this._levelManager.level);
+        this._hud.setTitle(this.stage.title);
 
-        const { player, treads } = await this._levelManager.build(this.spawn, MAP_SIZE);
+        const { player, treads } = await this.stage.build(this.spawn, MAP_SIZE);
         this._player = player;
         this._treads = treads;
         this._levelState = "playing";
@@ -203,7 +235,7 @@ class GameScene {
         if (this._levelState === "playing") {
             if (!this.player) {
                 this.endLevel(false);
-            } else if (!this._entityManager.entities.some((e) => e instanceof EnemyTank && !e.shouldDispose)) {
+            } else if (this.stage.isCleared(this._entityManager.entities)) {
                 this.endLevel(true);
             }
         } else if (this._levelState === "ended") {
@@ -215,15 +247,7 @@ class GameScene {
     private endLevel(won: boolean): void {
         this._levelState = "ended";
         this._levelEndTimer = LEVEL_TRANSITION_TIME;
-
-        const level = this._levelManager.level;
-        if (won) {
-            this._hud.showMessage(`Level ${level} cleared!`);
-            this._levelManager.advance();
-        } else {
-            this._hud.showMessage(`Destroyed on level ${level}`);
-            this._levelManager.reset();
-        }
+        this._hud.showMessage(won ? this.stage.onCleared() : this.stage.onFailed());
     }
 
     private restartLevel(): void {
@@ -246,6 +270,15 @@ class GameScene {
         this._cameraManager.setStrategy(next);
         this._pausedByCamera = next.pausesGame;
         this._hud.flash(next.pausesGame ? "Free camera (paused)" : "Top-down camera");
+    };
+
+    /** Switches to the next scene (battle, physics playground, ...). */
+    private nextStage = (): void => {
+        if (this._levelState === "loading") return; // Let the current one finish building first
+
+        this._stageIndex = (this._stageIndex + 1) % this._stages.length;
+        this._hud.flash(`${this.stage.name} (N: next scene)`, 2000);
+        this.restartLevel();
     };
 
     private toggleAiDebug = (): void => {

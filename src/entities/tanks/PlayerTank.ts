@@ -84,9 +84,12 @@ class PlayerTank extends Tank {
         if (hasInput) this.drive(deltaT);
     }
 
+    /**
+     * Just drives: physics stops the tank at walls (it slides along them), pushes loose objects
+     * and other tanks out of the way and lets it drive up ramps.
+     */
     private drive(deltaT: number): void {
-        // When blocked, slide along the wall at half speed
-        this.moveWithSlide(this.movementFor(deltaT), 0.5);
+        this.applyMovement(this.movementFor(deltaT));
     }
 }
 
