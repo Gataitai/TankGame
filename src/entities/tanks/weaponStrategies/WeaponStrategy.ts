@@ -1,9 +1,8 @@
 import { Vector3 } from "three";
-import type Scene from "@/scene/Scene";
 
 interface WeaponStrategy {
-    /** Fires into `scene` from `position` towards `rotation`. Does nothing while reloading or at the limit. */
-    spawn(scene: Scene, position: Vector3, rotation: number): void;
+    /** Fires from `position` towards `rotation`. Does nothing while reloading or at the limit. */
+    spawn(position: Vector3, rotation: number): void;
 
     /** Advances reload timers. Called every frame by the tank that owns the weapon. */
     update(deltaT: number): void;

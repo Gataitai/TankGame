@@ -82,17 +82,6 @@ class AiDebugView {
         }
     }
 
-    /** Frees all GPU resources (called when the scene is disposed). */
-    public dispose(): void {
-        this.clear();
-        this._styles.forEach((style) => style.material.dispose());
-        this._styles.clear();
-        this._pathMaterials.forEach((material) => material.dispose());
-        this._waypointGeometry.dispose();
-        this._markerGeometry.dispose();
-        this._group.removeFromParent();
-    }
-
     /** Each tank keeps the same random colour for as long as it lives. */
     private styleFor(tank: TacticalEnemyTank): TankDebugStyle {
         let style = this._styles.get(tank);

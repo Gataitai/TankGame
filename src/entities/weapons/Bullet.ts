@@ -2,12 +2,12 @@ import { Box3, Sphere, Vector3 } from "three";
 import Entity from "@/entities/Entity";
 import Projectile from "@/entities/weapons/Projectile";
 import FireEffect from "@/effects/FireEffect";
+import GameScene from "@/scene/GameScene";
 
 export const BULLET_SPEED = 6;
 
 /** Fast shot that bounces off walls once before exploding. */
 class Bullet extends Projectile {
-    protected readonly kickStrength = 8;
     private readonly _maxBounces = 1;
     private _bounceCount = 0;
 
@@ -25,7 +25,7 @@ class Bullet extends Projectile {
         this.alignWithVelocity();
         this._bounceCount++;
 
-        void this.scene.add(new FireEffect(this.position, this.getSparkAngle(obstacle)));
+        void GameScene.instance.spawn(new FireEffect(this.position, this.getSparkAngle(obstacle)));
     }
 
     /** Picks the wall face that was hit (axis-aligned, since walls are boxes). */

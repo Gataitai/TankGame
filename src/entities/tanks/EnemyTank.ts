@@ -4,7 +4,7 @@ import BulletShooter from "@/entities/tanks/weaponStrategies/BulletShooter";
 
 /**
  * Base class for computer-controlled tanks. Subclasses implement the AI in think().
- * Scenes look for instances of this class, e.g. to know when a level is cleared.
+ * GameScene counts instances of this class to know when a level is cleared.
  */
 abstract class EnemyTank extends Tank {
     protected readonly _weapon = new BulletShooter();
@@ -13,7 +13,7 @@ abstract class EnemyTank extends Tank {
         super(position, speed);
     }
 
-    protected updateTank(deltaT: number): void {
+    public update(deltaT: number): void {
         this._weapon.update();
         this.think(deltaT);
     }
