@@ -16,6 +16,11 @@ export type RampOptions = PropOptions & {
     length?: number;
     /** Height of the high end (default 1). */
     height?: number;
+    /**
+     * Hang it upside down: flat on top, sloping underneath, still thickest towards `rise`. For the
+     * corners under a ceiling. The base is then the middle of its footprint on top, minus its height.
+     */
+    upsideDown?: boolean;
 };
 
 const WIDTH = 1;
@@ -113,12 +118,14 @@ class Ramp extends Entity {
     constructor(base: Vector3, options: RampOptions = {}) {
         const dimensions = { length: options.length ?? 2, height: options.height ?? 1 };
         const rotation = ROTATIONS[options.rise ?? "+y"];
-        const centroid = centroidOf(dimensions).applyAxisAngle(new Vector3(0, 0, 1), rotation);
-        super(base.clone().add(centroid));
+        const centroid = centroidOf(dimensions);
+        // Upside down = turned half a turn around the rise direction: the centre of mass moves up
+        if (options.upsideDown) centroid.z = dimensions.height - centroid.z;
+        super(base.clone().add(centroid.applyAxisAngle(new Vector3(0, 0, 1), rotation)));
 
         this._options = options;
         this._dimensions = dimensions;
-        this.mesh.rotation.z = rotation;
+        this.mesh.rotation.set(0, options.upsideDown ? Math.PI : 0, rotation, "ZYX");
         applyPropOptions(this, options);
     }
 

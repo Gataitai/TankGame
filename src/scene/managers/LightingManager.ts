@@ -1,4 +1,4 @@
-import { DirectionalLight, Scene } from "three";
+import { DirectionalLight, Scene, Vector3 } from "three";
 import LightIndicator from "@/entities/lights/LightIndicator";
 
 type LightConfig = {
@@ -17,6 +17,10 @@ const LIGHTS: LightConfig[] = [
 ];
 
 class LightingManager {
+    private _shadowLight: DirectionalLight | null = null;
+    /** Where the shadow light is relative to the point it shines at. */
+    private readonly _shadowOffset = new Vector3();
+
     /** Adds the lights to the scene and returns indicator entities to visualise them. */
     public setupLights(scene: Scene, mapSize: number): LightIndicator[] {
         return LIGHTS.map(({ color, position, castShadow }) => {
@@ -24,6 +28,10 @@ class LightingManager {
             light.position.set(...position(mapSize));
 
             if (castShadow) {
+                // Directional lights shine from their position towards their target (the origin)
+                this._shadowLight = light;
+                this._shadowOffset.copy(light.position).sub(light.target.position);
+                scene.add(light.target);
                 light.castShadow = true;
                 light.shadow.mapSize.set(2048, 2048);
                 light.shadow.camera.left = -30;
@@ -36,6 +44,16 @@ class LightingManager {
             scene.add(light);
             return new LightIndicator(light.position, color);
         });
+    }
+
+    /**
+     * Shadows are only rendered in a limited area around the shadow light's target. Moving the
+     * light along (same direction) keeps the area around `point` covered on big maps.
+     */
+    public centerShadowsOn(point: Vector3): void {
+        if (!this._shadowLight) return;
+        this._shadowLight.target.position.set(point.x, point.y, 0);
+        this._shadowLight.position.copy(this._shadowLight.target.position).add(this._shadowOffset);
     }
 }
 

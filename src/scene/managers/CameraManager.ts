@@ -38,8 +38,9 @@ class CameraManager {
      * The shake is applied as an offset relative to wherever the camera is, so it works for any
      * strategy and the camera ends up exactly where it started.
      */
-    public update(deltaT: number, elapsedTime: number): void {
+    public update(deltaT: number, elapsedTime: number, focus: Vector3): void {
         this.clearShakeOffset();
+        this._strategy.update?.(deltaT, focus);
         if (this._shakeTimeLeft <= 0) return;
 
         this._shakeTimeLeft -= deltaT;

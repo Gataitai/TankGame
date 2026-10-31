@@ -7,7 +7,7 @@ import SmokeEffect from "@/effects/SmokeEffect";
 import GameScene from "@/scene/GameScene";
 
 class BulletShooter implements WeaponStrategy {
-    private readonly _bullets = new ActiveEntityLimit(5);
+    private readonly _bullets = new ActiveEntityLimit(10000);
 
     public spawn(position: Vector3, rotation: number): void {
         if (!this._bullets.hasRoom()) return;

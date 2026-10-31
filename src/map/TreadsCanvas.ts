@@ -1,6 +1,9 @@
 import Entity from "@/entities/Entity";
 import { CanvasTexture, Mesh, MeshStandardMaterial, PlaneGeometry, Vector3 } from "three";
 
+/** Largest canvas edge in pixels (bigger canvases use a lot of memory). */
+const MAX_CANVAS_SIZE = 4096;
+
 /** Transparent canvas laid over the ground that tanks draw their tread marks onto. */
 class TreadsCanvas extends Entity {
     private _canvas: HTMLCanvasElement;
@@ -9,6 +12,7 @@ class TreadsCanvas extends Entity {
     private readonly _size: number;
     private _scaleFactor: number = 0;
 
+    /** Canvas pixels per tile; lower on big maps so the canvas stays a reasonable size. */
     private _treadsResolution: number = 100;
 
     constructor(size: number, position: Vector3) {
@@ -21,6 +25,7 @@ class TreadsCanvas extends Entity {
 
     public async load(): Promise<void> {
         const edge = this._size - 1;
+        this._treadsResolution = Math.min(100, Math.floor(MAX_CANVAS_SIZE / edge));
 
         this._canvas.width = edge * this._treadsResolution;
         this._canvas.height = edge * this._treadsResolution;
@@ -42,8 +47,9 @@ class TreadsCanvas extends Entity {
     public drawTreads(position: Vector3, angle: number): void {
         const ctx = this._context;
 
-        const x = (position.x * this._scaleFactor) - (this._treadsResolution / 2);
-        const y = (position.y * this._scaleFactor) - (this._canvas.height / this._size / 2);
+        // The canvas covers the map from tile 0.5 to size - 0.5 (canvas Y points down)
+        const x = (position.x - 0.5) * this._scaleFactor;
+        const y = (position.y - 0.5) * this._scaleFactor;
 
         const treadWidth = 25;
         const treadHeight = 10;
@@ -52,6 +58,7 @@ class TreadsCanvas extends Entity {
         ctx.save();
         ctx.translate(x, this._canvas.height - y);
         ctx.rotate(-angle);
+        ctx.scale(this._treadsResolution / 100, this._treadsResolution / 100); // Sizes below are for 100 px per tile
 
         // Subtle shadow for diffusion
         ctx.shadowColor = "rgba(80, 60, 40, 0.3)";  // Softer shadow

@@ -1,5 +1,5 @@
 import { Box3, Mesh, MeshStandardMaterial, Quaternion, Sphere, Vector3 } from "three";
-import { Body, Sphere as SphereShape, Vec3 } from "cannon-es";
+import { Body, Box, Sphere as SphereShape, Vec3 } from "cannon-es";
 import UpdatableEntity from "@/entities/UpdatableEntity";
 import type { Impact } from "@/entities/Entity";
 import type WeaponStrategy from "@/entities/tanks/weaponStrategies/WeaponStrategy";
@@ -10,6 +10,7 @@ import { CollisionGroups, PhysicsMaterials } from "@/physics/PhysicsWorld";
 import ResourceManager from "@/utils/ResourceManager";
 import { markShared } from "@/utils/SharedResources";
 import { angleBetween, directionFromAngle, stepAngleTowards, wrapAngle } from "@/utils/MathUtils";
+import { GRAVITY } from "@/config";
 
 const BODY_MATERIAL = markShared(new MeshStandardMaterial({ metalness: 0.9, roughness: 0.2 }));
 const TURRET_MATERIAL = markShared(new MeshStandardMaterial({ metalness: 0.8, roughness: 0.3 }));
@@ -47,10 +48,56 @@ const TREAD_MAX_HEIGHT = 0.05;
 /** How fast the pieces of a destroyed tank fly apart. */
 export const TANK_BREAK_FORCE = 4;
 
+// ---- Flying and tumbling
+// In the air (and when knocked over) the tank is a box around the model that rotates freely.
+/** Height of the middle of the model above its bottom: the box rotates around this point. */
+const CENTER_HEIGHT = 0.32;
+const HALF_EXTENTS = new Vec3(0.44, 0.52, 0.32);
+/** Being in the air longer than this (seconds) lets the tank tumble (short drops don't). */
+const TUMBLE_AFTER_AIRTIME = 0.35;
+/** Upward acceleration while thrusting (gravity is subtracted from it). */
+const THRUST_ACCELERATION = GRAVITY * 2.2;
+const MAX_RISE_SPEED = 7;
+/** Thrust stops working above this height. */
+const MAX_ALTITUDE = 25;
+/** Flying tanks are pushed back at this speed when they try to leave the map. */
+const MAP_EDGE_PUSH_SPEED = 3;
+/** How quickly the tank can change its horizontal speed in the air. */
+const AIR_ACCELERATION = 14;
+/**
+ * In the air the tank topples in the direction it's moving: it spins this many radians per second
+ * for every unit of horizontal speed, around the horizontal axis across its motion.
+ */
+const TUMBLE_PER_SPEED = 0.35;
+/** How quickly the spin follows the motion. */
+const TUMBLE_RESPONSE = 3;
+/** Only real flights make it topple, not bouncing on the ground (seconds without ground contact). */
+const TUMBLE_MIN_FLIGHT = 0.25;
+/** Tanks whose up direction is at least this vertical (z of the unit vector) count as upright. */
+const UPRIGHT_Z = 0.85;
+/** It only drives again once it has (almost) stopped spinning. */
+const LANDING_MAX_SPIN = 6;
+/** Getting back on the tracks: a small hop, then rotating upright. */
+const RIGHTING_HOP_SPEED = 4;
+const RIGHTING_TIME = 0.9;
+const RIGHTING_GAIN = 7;
+const RIGHTING_MAX_SPIN = 9;
+const RIGHTING_COOLDOWN = 0.5;
+
+/** Which way to roll a tank that's upside down (as seen from the tank). */
+export type FlipDirection = "left" | "right" | "forward" | "back";
+
 const UP = new Vector3(0, 0, 1);
+/** The model points towards -Y and its right side is +X. */
+const MODEL_FORWARD = new Vector3(0, -1, 0);
+const MODEL_RIGHT = new Vector3(1, 0, 0);
 const _yaw = new Quaternion();
 const _targetTilt = new Quaternion();
 const _center = new Vector3();
+const _bodyQuaternion = new Quaternion();
+const _offset = new Vector3();
+const _up = new Vector3();
+const _axis = new Vector3();
 
 /**
  * Base class of all tanks.
@@ -59,8 +106,13 @@ const _center = new Vector3();
  * tanks around, drive up ramps and fall off edges. They're driven by velocity: movement asked for
  * during update() (applyMovement) becomes the body's horizontal velocity for the physics step, so
  * when nothing is in the way a tank ends up exactly where it wanted to go (the AI relies on that).
- * The body never rotates: the tank sets its own heading, and the model tilts to match the ground
- * under it (e.g. on a ramp).
+ * The body never rotates while driving: the tank sets its own heading, and the model tilts to
+ * match the ground under it (e.g. on a ramp).
+ *
+ * In the air (flying, or after a long drop) the tank switches to "tumbling": its body becomes a box
+ * that rotates freely, and it topples in the direction it's moving. When it lands on its tracks it
+ * drives again; when it lands on its side or roof it has to be put back on its tracks (see
+ * requestRighting).
  */
 abstract class Tank extends UpdatableEntity {
     /** Body heading in radians, always kept in [-PI, PI]. */
@@ -78,6 +130,20 @@ abstract class Tank extends UpdatableEntity {
     private readonly _pendingMovement = new Vector3();
     /** How the model is tilted to match the ground (on top of its heading). */
     private readonly _tilt = new Quaternion();
+
+    private _mode: "driving" | "tumbling" = "driving";
+    private _airTime = 0;
+    private _tumbleTime = 0;
+    /** Seconds without ground contact while tumbling. */
+    private _flightTime = 0;
+    /** Set by subclasses each frame: fly upwards. */
+    protected _thrusting = false;
+    /** Set by subclasses each frame: where to accelerate in the air (world XY, length 0..1). */
+    protected readonly _airControl = new Vector3();
+    private _rightingRequest: FlipDirection | null = null;
+    private _rightingTime = 0;
+    private _rightingCooldown = 0;
+    private _rightingDirection: FlipDirection = "right";
 
     protected constructor(position: Vector3, moveSpeed: number) {
         super(position);
@@ -121,8 +187,27 @@ abstract class Tank extends UpdatableEntity {
             linearDamping: 0,
             fixedRotation: true,
         });
-        // The tank's origin is at the bottom of the model, so the ball sits on top of it
-        physicsBody.addShape(new SphereShape(BODY_RADIUS), new Vec3(0, 0, BODY_RADIUS));
+        physicsBody.quaternion.set(0, 0, 0, 1); // The heading is the tank's own business
+        this.setPhysicsShape("driving");
+    }
+
+    /** Whether it's on its tracks and can drive (not flying, falling or knocked over). */
+    public get isDriving(): boolean {
+        return this._mode === "driving";
+    }
+
+    /** Lying on its side or roof. */
+    public get isKnockedOver(): boolean {
+        return this._mode === "tumbling" && this.upVector().z < UPRIGHT_Z;
+    }
+
+    /**
+     * When knocked over and on the ground: hops and turns itself back onto its tracks (like
+     * flipping a car back over in GTA). `direction` picks the way to roll when it's exactly upside
+     * down; otherwise it takes the shortest way. Safe to call every frame.
+     */
+    public requestRighting(direction: FlipDirection): void {
+        this._rightingRequest = direction;
     }
 
     /** Blows up and breaks into pieces made from the tank's body and turret. */
@@ -137,24 +222,36 @@ abstract class Tank extends UpdatableEntity {
 
     // ---- Physics -------------------------------------------------------------------------
 
-    /** Turns the movement asked for this frame into velocity. */
+    /** Turns the movement asked for this frame into velocity (or flies, tumbles and rights itself). */
     public beforePhysicsStep(deltaT: number): void {
         const body = this.body;
         if (!body) return;
 
-        // Driving only works with the tracks on something. In the air the tank keeps its momentum.
-        if (deltaT > 0 && GameScene.instance.physics.isSupported(body)) {
-            body.velocity.x = this._pendingMovement.x / deltaT;
-            body.velocity.y = this._pendingMovement.y / deltaT;
-            this.stickToGround(body);
+        if (this._mode === "driving" && this._thrusting) this.startTumbling();
+
+        if (this._mode === "driving") {
+            // Driving only works with the tracks on something. In the air the tank keeps its momentum.
+            if (deltaT > 0 && GameScene.instance.physics.isSupported(body)) {
+                body.velocity.x = this._pendingMovement.x / deltaT;
+                body.velocity.y = this._pendingMovement.y / deltaT;
+                this.stickToGround(body);
+            }
+        } else {
+            this.fly(body, deltaT);
         }
         this._pendingMovement.set(0, 0, 0);
+        this._rightingRequest = null;
     }
 
     /** Takes over where physics put the tank, and tilts the model to match the ground. */
     public afterPhysicsStep(deltaT: number): void {
         const body = this.body;
         if (!body) return;
+
+        if (this._mode === "tumbling") {
+            this.afterTumbling(body, deltaT);
+            return;
+        }
 
         this.position.set(body.position.x, body.position.y, body.position.z);
 
@@ -165,6 +262,179 @@ abstract class Tank extends UpdatableEntity {
 
         this.applyOrientation();
         this.updateCollider();
+
+        // A long time in the air (off a ramp, blown up): let it tumble
+        this._airTime = GameScene.instance.physics.isSupported(body) ? 0 : this._airTime + deltaT;
+        if (this._airTime > TUMBLE_AFTER_AIRTIME) this.startTumbling();
+    }
+
+    // ---- Tumbling ------------------------------------------------------------------------
+
+    /** Thrust, air control, toppling with the motion, and getting back on the tracks. */
+    private fly(body: Body, deltaT: number): void {
+        const physics = GameScene.instance.physics;
+        const onGround = physics.isSupported(body);
+        this._flightTime = onGround ? 0 : this._flightTime + deltaT;
+        this._rightingCooldown -= deltaT;
+
+        if (this._thrusting && body.position.z < MAX_ALTITUDE) {
+            body.velocity.z = Math.min(MAX_RISE_SPEED, body.velocity.z + THRUST_ACCELERATION * deltaT);
+        }
+
+        this.stayAboveMap(body);
+
+        if (!onGround && this._airControl.lengthSq() > 0) {
+            body.velocity.x += this._airControl.x * AIR_ACCELERATION * deltaT;
+            body.velocity.y += this._airControl.y * AIR_ACCELERATION * deltaT;
+            const speed = Math.hypot(body.velocity.x, body.velocity.y);
+            if (speed > this._moveSpeed) {
+                body.velocity.x *= this._moveSpeed / speed;
+                body.velocity.y *= this._moveSpeed / speed;
+            }
+        }
+
+        // Knocked over on the ground and asked to get up: hop, then turn upright (below)
+        if (this._rightingRequest && onGround && this.isKnockedOver && this._rightingTime <= 0 && this._rightingCooldown <= 0) {
+            this._rightingTime = RIGHTING_TIME;
+            this._rightingDirection = this._rightingRequest;
+            body.velocity.z = RIGHTING_HOP_SPEED;
+        }
+
+        if (this._rightingTime > 0) {
+            this._rightingTime -= deltaT;
+            this.turnUpright(body);
+            if (this._rightingTime <= 0) this._rightingCooldown = RIGHTING_COOLDOWN;
+        } else if (this._flightTime > TUMBLE_MIN_FLIGHT || this._thrusting) {
+            // Topple in the direction of motion: spin around the horizontal axis across it, so the
+            // front goes down when flying forwards
+            _axis.set(-body.velocity.y, body.velocity.x, 0).multiplyScalar(TUMBLE_PER_SPEED);
+            const blend = Math.min(1, TUMBLE_RESPONSE * deltaT);
+            body.angularVelocity.x += (_axis.x - body.angularVelocity.x) * blend;
+            body.angularVelocity.y += (_axis.y - body.angularVelocity.y) * blend;
+        }
+    }
+
+    /** Invisible walls in the air: flying tanks can't leave the map. */
+    private stayAboveMap(body: Body): void {
+        const min = 1;
+        const max = GameScene.instance.stage.mapSize - 2;
+        if (body.position.x < min) body.velocity.x = Math.max(body.velocity.x, MAP_EDGE_PUSH_SPEED);
+        if (body.position.x > max) body.velocity.x = Math.min(body.velocity.x, -MAP_EDGE_PUSH_SPEED);
+        if (body.position.y < min) body.velocity.y = Math.max(body.velocity.y, MAP_EDGE_PUSH_SPEED);
+        if (body.position.y > max) body.velocity.y = Math.min(body.velocity.y, -MAP_EDGE_PUSH_SPEED);
+    }
+
+    /** Spins the body so its up direction turns towards the sky. */
+    private turnUpright(body: Body): void {
+        const up = this.upVector();
+        const angle = up.angleTo(UP);
+        if (angle < 0.05) {
+            body.angularVelocity.set(0, 0, 0);
+            this._rightingTime = 0;
+            return;
+        }
+
+        // Rotating around up x sky turns up towards the sky. Exactly upside down that axis is
+        // undefined, so roll the way that was asked for instead.
+        _axis.crossVectors(up, UP);
+        if (_axis.lengthSq() < 0.04) {
+            const sideways = this._rightingDirection === "left" || this._rightingDirection === "right";
+            const sign = this._rightingDirection === "right" || this._rightingDirection === "forward" ? 1 : -1;
+            _axis.copy(sideways ? MODEL_FORWARD : MODEL_RIGHT).applyQuaternion(this.bodyQuaternion()).multiplyScalar(sign);
+        }
+        _axis.normalize().multiplyScalar(Math.min(RIGHTING_MAX_SPIN, angle * RIGHTING_GAIN));
+        body.angularVelocity.set(_axis.x, _axis.y, _axis.z);
+    }
+
+    private afterTumbling(body: Body, deltaT: number): void {
+        this._tumbleTime += deltaT;
+
+        // The body's origin is the middle of the model; the entity's position is its bottom
+        const q = this.bodyQuaternion();
+        _offset.set(0, 0, CENTER_HEIGHT).applyQuaternion(q);
+        this.position.set(body.position.x - _offset.x, body.position.y - _offset.y, body.position.z - _offset.z);
+        this.mesh.quaternion.copy(q);
+        this.updateCollider();
+
+        const landed = GameScene.instance.physics.isSupported(body)
+            && !this._thrusting
+            && this._tumbleTime > 0.2
+            && this.upVector().z >= UPRIGHT_Z
+            && body.angularVelocity.length() < LANDING_MAX_SPIN;
+        if (landed) this.startDriving();
+    }
+
+    /** From driving to a freely rotating box (keeps the current position, tilt and heading). */
+    private startTumbling(): void {
+        const body = this.body!;
+        this._mode = "tumbling";
+        this._tumbleTime = 0;
+        this._flightTime = this._airTime;
+        this._rightingTime = 0;
+
+        const q = this.mesh.quaternion;
+        _offset.set(0, 0, CENTER_HEIGHT).applyQuaternion(q);
+        body.position.vadd(new Vec3(_offset.x, _offset.y, _offset.z), body.position);
+        body.quaternion.set(q.x, q.y, q.z, q.w);
+        this.setPhysicsShape("tumbling");
+    }
+
+    /** Back on its tracks: the heading is wherever it ended up facing. */
+    private startDriving(): void {
+        const body = this.body!;
+        const q = this.bodyQuaternion();
+
+        const forward = MODEL_FORWARD.clone().applyQuaternion(q);
+        this._rotation = wrapAngle(Math.atan2(forward.x, -forward.y));
+        this._reversing = false;
+        this._tilt.setFromUnitVectors(UP, this.upVector());
+
+        // Back to the origin at the bottom of the model, and no more rotation
+        body.position.set(this.position.x, this.position.y, this.position.z);
+        body.quaternion.set(0, 0, 0, 1);
+        body.angularVelocity.set(0, 0, 0);
+        this.setPhysicsShape("driving");
+
+        this._mode = "driving";
+        this._airTime = 0;
+        this.applyOrientation();
+    }
+
+    /** Driving: a ball that doesn't rotate. Tumbling: a box around the model that does. */
+    private setPhysicsShape(mode: "driving" | "tumbling"): void {
+        const body = this.body!;
+        while (body.shapes.length > 0) body.removeShape(body.shapes[0]);
+
+        if (mode === "driving") {
+            // The tank's origin is at the bottom of the model, so the ball sits on top of it
+            body.addShape(new SphereShape(BODY_RADIUS), new Vec3(0, 0, BODY_RADIUS));
+            body.material = PhysicsMaterials.tank;
+            body.angularDamping = 0;
+        } else {
+            body.addShape(new Box(HALF_EXTENTS));
+            body.material = PhysicsMaterials.prop; // Has friction, so it doesn't slide around on its roof
+            body.angularDamping = 0.1;
+        }
+        body.fixedRotation = mode === "driving";
+        body.updateMassProperties();
+        body.aabbNeedsUpdate = true;
+    }
+
+    private bodyQuaternion(): Quaternion {
+        const q = this.body!.quaternion;
+        return _bodyQuaternion.set(q.x, q.y, q.z, q.w);
+    }
+
+    /** The model's up direction in the world. */
+    private upVector(): Vector3 {
+        return _up.copy(UP).applyQuaternion(this.mesh.quaternion);
+    }
+
+    /** The direction the barrel points in (as a heading), wherever the tank is facing. */
+    protected barrelHeading(): number {
+        this._turretMesh.updateWorldMatrix(true, false);
+        const direction = MODEL_FORWARD.clone().transformDirection(this._turretMesh.matrixWorld);
+        return Math.atan2(direction.x, -direction.y);
     }
 
     /** Removes velocity that would make the tank leave the ground it's driving on. */

@@ -19,6 +19,7 @@ import PerspectiveStrategy from "@/scene/cameraStrategies/PerspectiveStrategy";
 import Hud from "@/ui/Hud";
 import ResourceManager from "@/utils/ResourceManager";
 import { LEVEL_TRANSITION_TIME, MAP_SIZE, MAX_FRAME_DELTA } from "@/config";
+import BigMapStage from "@/scene/stages/BigMapStage";
 
 type LevelState = "loading" | "playing" | "ended";
 
@@ -34,7 +35,7 @@ class GameScene {
     private readonly _input = InputManager.instance;
 
     /** The scenes that N cycles through. */
-    private readonly _stages: Stage[] = [new BattleStage(), new PlaygroundStage()];
+    private readonly _stages: Stage[] = [new BattleStage(), new PlaygroundStage(), new BigMapStage()];
     private _stageIndex = 0;
 
     private _renderer!: WebGLRenderer;
@@ -53,6 +54,11 @@ class GameScene {
 
     private _pausedByCamera = false;
     private _pausedByVisibility = false;
+
+    private readonly _lighting = new LightingManager();
+    private _lightIndicators: Entity[] = [];
+    /** What the camera (and the shadows) are centred on. */
+    private readonly _focus = new Vector3();
 
     private readonly _raycaster = new Raycaster();
     private readonly _groundPlane = new Plane(new Vector3(0, 0, 1), 0);
@@ -78,12 +84,12 @@ class GameScene {
 
         this._hud = new Hud();
         this._aiDebug = new AiDebugView(this._scene);
-        this._cameraManager = new CameraManager(new OrthographicStrategy(this._renderer, MAP_SIZE));
+        this._cameraManager = new CameraManager(new OrthographicStrategy(this._renderer, this.mapCenter()));
 
         await ResourceManager.instance.load();
 
-        const indicators = new LightingManager().setupLights(this._scene, MAP_SIZE);
-        await Promise.all(indicators.map(this.spawn));
+        this._lightIndicators = this._lighting.setupLights(this._scene, MAP_SIZE);
+        await Promise.all(this._lightIndicators.map(this.spawn));
 
         await this.startLevel();
     }
@@ -188,7 +194,9 @@ class GameScene {
         this._stats.begin();
 
         const deltaT = Math.min(this._clock.getDelta(), MAX_FRAME_DELTA);
-        this._cameraManager.update(deltaT, this._clock.elapsedTime);
+        this.updateFocus();
+        this._cameraManager.update(deltaT, this._clock.elapsedTime, this._focus);
+        this._lighting.centerShadowsOn(this._focus);
         this.updateMouseWorldPosition();
 
         if (!this.paused) {
@@ -212,6 +220,21 @@ class GameScene {
         }
     };
 
+    /** The player's tank on maps that follow it, otherwise the middle of the map. */
+    private updateFocus(): void {
+        if (!this.stage.followCamera) {
+            this._focus.copy(this.mapCenter());
+        } else if (this.player) {
+            this._focus.copy(this.player.position);
+        }
+        // Otherwise keep looking where the player was last
+    }
+
+    private mapCenter(): Vector3 {
+        const half = this.stage.mapSize / 2;
+        return new Vector3(half, half, 0);
+    }
+
     private updateMouseWorldPosition(): void {
         this._raycaster.setFromCamera(this._input.mousePosition, this._cameraManager.camera);
         // Keeps the previous value if the ray doesn't hit the ground (e.g. looking at the sky)
@@ -225,7 +248,18 @@ class GameScene {
         this._hud.hideMessage();
         this._hud.setTitle(this.stage.title);
 
-        const { player, treads } = await this.stage.build(this.spawn, MAP_SIZE);
+        // Fresh AI map for this stage's size
+        this._entityManager.setMapSize(this.stage.mapSize);
+
+        const { player, treads } = await this.stage.build(this.spawn, this.stage.mapSize);
+
+        // Top-down camera on the whole map, or following the player from where it starts
+        const follow = this.stage.followCamera;
+        this._focus.copy(follow ? player.position : this.mapCenter());
+        this._cameraManager.setStrategy(new OrthographicStrategy(this._renderer, this._focus.clone(), follow));
+        this._pausedByCamera = false;
+        // They mark where the lights are around the standard map; on a big map they'd float in the way
+        this._lightIndicators.forEach((indicator) => (indicator.mesh.visible = !follow));
         this._player = player;
         this._treads = treads;
         this._levelState = "playing";
@@ -264,8 +298,8 @@ class GameScene {
         if (!this._cameraManager) return; // Not loaded yet
 
         const next = this._cameraManager.strategy instanceof OrthographicStrategy
-            ? new PerspectiveStrategy(this._renderer, MAP_SIZE)
-            : new OrthographicStrategy(this._renderer, MAP_SIZE);
+            ? new PerspectiveStrategy(this._renderer, this._focus.clone())
+            : new OrthographicStrategy(this._renderer, this.stage.followCamera ? this._focus.clone() : this.mapCenter(), this.stage.followCamera);
 
         this._cameraManager.setStrategy(next);
         this._pausedByCamera = next.pausesGame;

@@ -108,6 +108,8 @@ class InputManager {
     // ---- DOM handlers --------------------------------------------------------------------
 
     private handleKeyDown = (e: KeyboardEvent) => {
+        // Space and the arrow keys would otherwise scroll the page
+        if (e.code === "Space" || e.code.startsWith("Arrow")) e.preventDefault();
         this._pressed.add(e.code);
         // Ignore auto-repeat so toggles (like the camera key) don't flicker when held.
         if (!e.repeat) InputManager.emit(this._keyDownListeners.get(e.code));

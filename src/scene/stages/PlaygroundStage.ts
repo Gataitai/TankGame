@@ -9,6 +9,7 @@ import BreakableWall from "@/map/BreakableWall";
 import Wall from "@/map/Wall";
 import type Stage from "@/scene/stages/Stage";
 import type { Spawn, StageEntities } from "@/scene/stages/Stage";
+import { MAP_SIZE } from "@/config";
 import { buildArena } from "@/scene/stages/Arena";
 
 /** Everything in the playground breaks when shot. */
@@ -31,6 +32,8 @@ const JUMP_COLUMNS = [20, 21];
 class PlaygroundStage implements Stage {
     public readonly name = "Physics playground";
     public readonly title = "Physics playground";
+    public readonly mapSize = MAP_SIZE;
+    public readonly followCamera = false;
 
     public async build(spawn: Spawn, mapSize: number): Promise<StageEntities> {
         const { treads, pending } = buildArena(spawn, mapSize);

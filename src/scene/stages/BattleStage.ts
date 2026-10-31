@@ -9,7 +9,7 @@ import TacticalEnemyTank from "@/entities/tanks/TacticalEnemyTank";
 import type Stage from "@/scene/stages/Stage";
 import type { Spawn, StageEntities } from "@/scene/stages/Stage";
 import { buildArena, uniquePositions } from "@/scene/stages/Arena";
-import { ENEMY_AI, WALL_Z } from "@/config";
+import { ENEMY_AI, MAP_SIZE, WALL_Z } from "@/config";
 
 /**
  * Obstacle layouts, one per level (cycling). Each 5x5 pattern is stretched over the map;
@@ -54,6 +54,8 @@ const BREAKABLE_WALL_CHANCE = 0.5;
  */
 class BattleStage implements Stage {
     public readonly name = "Battle";
+    public readonly mapSize = MAP_SIZE;
+    public readonly followCamera = false;
     private _level = 1;
 
     public get title(): string {

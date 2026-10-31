@@ -11,7 +11,7 @@ import { WALL_Z } from "@/config";
  */
 export function buildArena(spawn: Spawn, mapSize: number): { treads: Promise<TreadsCanvas>; pending: Promise<unknown>[] } {
     const center = new Vector3(mapSize / 2, mapSize / 2, 0);
-    const pending: Promise<unknown>[] = [spawn(new GameMap(center))];
+    const pending: Promise<unknown>[] = [spawn(new GameMap(center, mapSize))];
     const treads = spawn(new TreadsCanvas(mapSize, center));
 
     for (const position of borderPositions(mapSize)) {

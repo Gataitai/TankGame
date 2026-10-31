@@ -17,7 +17,7 @@ import GameScene from "@/scene/GameScene";
 import { markShared } from "@/utils/SharedResources";
 import { directionFromAngle } from "@/utils/MathUtils";
 import { HIT_SHAKE } from "@/config";
-import EnemyTank from "@/entities/tanks/EnemyTank";
+import Tank from "@/entities/tanks/Tank";
 
 /** Impulse given to physics objects that are hit (and survive). */
 const HIT_IMPULSE = 0.6;
@@ -134,7 +134,7 @@ abstract class Projectile extends UpdatableEntity {
         } else if (hit instanceof Landmine) {
             hit.trigger();
             this.explodeAndDispose();
-        } else if (hit instanceof EnemyTank) {
+        } else if (hit instanceof Tank) {
             hit.destroy(this.position);
             this.explodeAndDispose();
             GameScene.instance.shakeCamera(HIT_SHAKE.duration, HIT_SHAKE.intensity);

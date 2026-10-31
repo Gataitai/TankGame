@@ -22,7 +22,7 @@ const boundsOf = (collider: Box3 | Sphere): Bounds => {
  * meshes of physics-driven entities are moved to their bodies.
  */
 class EntityManager {
-    public readonly navGrid: NavGrid;
+    private _navGrid: NavGrid;
     public readonly physics = new PhysicsWorld();
 
     private _entities: Entity[] = [];
@@ -30,7 +30,17 @@ class EntityManager {
     private _staticGrid = new Map<string, Entity[]>();
 
     constructor(mapSize: number) {
-        this.navGrid = new NavGrid(mapSize);
+        this._navGrid = new NavGrid(mapSize);
+    }
+
+    /** The AI's map knowledge (walkable tiles). */
+    public get navGrid(): NavGrid {
+        return this._navGrid;
+    }
+
+    /** Starts a fresh nav grid for a map of another size. Call while no walls are added. */
+    public setMapSize(mapSize: number): void {
+        if (this._navGrid.size !== mapSize) this._navGrid = new NavGrid(mapSize);
     }
 
     public get entities(): readonly Entity[] {

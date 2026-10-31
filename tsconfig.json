@@ -8,7 +8,8 @@
 
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@2/*": ["./src2/*"]
     },
 
     /* Bundler mode */
@@ -27,6 +28,7 @@
     "allowSyntheticDefaultImports": true
   },
   "include": [
-    "src"
+    "src",
+    "src2"
   ]
 }

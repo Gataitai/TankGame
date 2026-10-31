@@ -3,7 +3,9 @@
 Tank Game inspired by Wii play tanks
 
 ## Controls
-- **WASD** – Move the tank.
+- **WASD** – Move the tank (steers in the air while flying).
+- **Space (hold)** – Fly up into the sky. The turret spins like a helicopter rotor while you fly.
+- **Arrow keys** – When your tank is lying on its side or roof, flip it back onto its tracks (GTA style). When it's exactly upside down, the key picks which way it rolls.
 - **Mouse Movement** – Aim the turret.
 - **Left Mouse Button** – Shoot bullets.
 - **Right Mouse Button** – Place a landmine.
@@ -11,11 +13,12 @@ Tank Game inspired by Wii play tanks
 - **1** – Toggle between the top-down camera and a free orbit camera (the game pauses while orbiting).
 
 - **2** – Toggle the AI debug view: each enemy gets a coloured cone and matching patrol-waypoint dots, plus a line for its current path.
-- **N** – Switch to the next scene: the battle or the physics playground.
+- **N** – Switch to the next scene: the battle, the physics playground or the big map.
 
 ## Scenes
 - **Battle** – Destroy every enemy tank to advance to the next level; if your tank is destroyed you restart at level 1.
 - **Physics playground** – No enemy AI, just things to try the physics on: a parkour of ramps and blocks (drive up to height 1 and 2 and back down), a jump ramp (top right, drive down over it at full speed), loose balls, crates, walls, dominoes and a pyramid to push around and knock over, glass walls, and two target tanks that don't fight back. Everything in it breaks when shot.
+- **Big map** – A 64x64 map, much bigger than the screen; the camera follows your tank. It has a tower parkour that ends in a big jump off the top, a long bridge, a jump over a gap, randomly placed walls, loose toys and enemy tanks that hunt you. Destroy them all to start the next round with more enemies.
 
 ## Physics
 The game uses [cannon-es](https://github.com/pmndrs/cannon-es) (`src/physics/`). Physics is part of `Entity`: any entity can have a `body`.
@@ -24,6 +27,7 @@ The game uses [cannon-es](https://github.com/pmndrs/cannon-es) (`src/physics/`).
 - **Tanks** have a dynamic body that doesn't rotate. They're driven by setting their velocity, so they push loose objects and other tanks out of the way, slide along walls, drive up ramps and fly off the end of the jump ramp. The model tilts to match the ground under it. When nothing is in the way a tank still ends up exactly where it wanted to go, which the enemy AI relies on.
 - **Breaking**: `destructible` entities (tanks, breakable walls, props) break into pieces when destroyed; `fragile` ones already break from a single bullet. The pieces are cut from the entity's own mesh (`src/physics/Fracture.ts`), so they keep its texture, and the cut faces are filled in with the same texture. The pieces fly away from where it was hit, fall to the ground, and shrink away after a few seconds. Breakable walls shatter into lots of small pieces, like glass.
 - Explosions push loose objects and pieces away.
+- **Flying and tumbling**: in the air (while flying with Space, or after a long drop like the end of a jump) a tank's body becomes a box that rotates freely, and it topples in the direction it's moving. When it lands on its tracks it drives again; when it lands on its side or roof, the arrow keys make it hop and roll back upright. Enemy tanks do that by themselves after a moment. Flying tanks can't leave the map.
 
 All the wooden objects (walls, blocks, balls and ramps, in `src/entities/props/`) use the existing wall textures and are at most 1 by 2 tiles, like wooden building blocks.
 
@@ -73,7 +77,7 @@ The original simple AI is still available as `BasicEnemyTank`; switch with `ENEM
 ## Project Structure
 - `src/scene/GameScene.ts` – Game loop, level flow, scene switching and `spawn()`, the single entry point for adding entities.
 - `src/scene/managers/` – Entities, physics stepping & collision queries, input, camera and lighting.
-- `src/scene/stages/` – The scenes: the battle levels and the physics playground.
+- `src/scene/stages/` – The scenes: the battle levels, the physics playground and the big map. Each stage sets its map size and whether the camera follows the player.
 - `src/physics/` – The cannon-es world, and breaking meshes into pieces.
 - `src/entities/` – Tanks, weapons (strategies), projectiles, props and shards.
 - `src/effects/` – Short-lived visual effects.

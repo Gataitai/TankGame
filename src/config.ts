@@ -16,6 +16,10 @@ export const GROUND_EXTENSION = 3;
 /** Vertical size of the orthographic camera's view, in world units. */
 export const ORTHO_FRUSTUM_SIZE = 20;
 export const ORTHO_CAMERA_HEIGHT = 10;
+/** How far behind (towards -Y) the point it looks at the top-down camera is. */
+export const ORTHO_CAMERA_BACK = 12.5;
+/** How quickly the following camera catches up with the tank (higher = tighter). */
+export const CAMERA_FOLLOW_RATE = 6;
 
 /** Z position of wall centres (walls are 1x1x1 cubes resting on the ground). */
 export const WALL_Z = 0.5;

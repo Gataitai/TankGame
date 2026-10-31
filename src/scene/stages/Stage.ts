@@ -20,6 +20,15 @@ interface Stage {
     /** Text in the HUD's corner while playing it (e.g. "Level 3"). */
     readonly title: string;
 
+    /** The map is mapSize x mapSize tiles, border walls included. */
+    readonly mapSize: number;
+
+    /**
+     * Whether the camera follows the player's tank (for maps bigger than the screen). Otherwise it
+     * shows the whole map.
+     */
+    readonly followCamera: boolean;
+
     /** Spawns everything: ground, walls, objects and tanks. */
     build(spawn: Spawn, mapSize: number): Promise<StageEntities>;
 
