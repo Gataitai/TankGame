@@ -7,44 +7,70 @@ import { game } from "@2/scene/Game";
 import { MAX_DEBRIS, MAX_DEBRIS_TOTAL } from "@2/config";
 
 /**
- * Keeps the pile of pieces under MAX_DEBRIS by cutting the oldest ones' lives short, so they start
- * shrinking away. That looks like the oldest debris tidying itself up, because that is what it is.
- *
- * Every piece is a geometry, a draw call and a physics body, and bodies that touch cost more than
- * bodies that don't, so this ceiling is the main thing standing between a few rockets and a
- * stuttering frame. BreakSystem calls this as it works too, so a big explosion can't shoot past
- * the cap and then be trimmed back a moment later.
+ * Splits the live pieces into the ones still in their prime and the ones already shrinking away.
+ * Entities marked for removal this frame are left out: they are gone as far as the caps care.
  */
-export function trimDebris(): void {
+function census(): { fresh: EntityId[]; fading: EntityId[] } {
     const { ecs } = game();
+    const fresh: EntityId[] = [];
+    const fading: EntityId[] = [];
 
-    // Entities already marked for removal this frame are gone as far as the cap is concerned;
-    // counting them would mean condemning more pieces on every call until the pile was empty
-    const pieces: { entity: EntityId; remaining: number }[] = [];
     ecs.each(Debris, (entity) => {
         if (ecs.isDoomed(entity)) return;
         const lifetime = ecs.get(entity, Lifetime);
-        if (lifetime) pieces.push({ entity, remaining: lifetime.remaining });
+        if (!lifetime) return;
+        (lifetime.remaining <= DEBRIS_SHRINK_TIME ? fading : fresh).push(entity);
     });
-    if (pieces.length <= MAX_DEBRIS) return;
+    return { fresh, fading };
+}
 
-    // Least time left first: the oldest, most faded pieces are the ones to let go of
-    pieces.sort((a, b) => a.remaining - b.remaining);
+/**
+ * How many more pieces will fit before the cap starts retiring things. May be negative.
+ *
+ * BreakSystem asks before it cuts a mesh up, so a huge explosion makes fewer, chunkier pieces
+ * instead of making the full number and having the surplus retired the instant it appears.
+ */
+export function debrisRoom(): number {
+    return MAX_DEBRIS - census().fresh.length;
+}
 
-    // Past the hard ceiling, pieces are dropped outright rather than given another half second to
-    // shrink. This is what stops a run of explosions from doubling the pile.
-    const overCeiling = Math.max(0, pieces.length - MAX_DEBRIS_TOTAL);
-    for (let i = 0; i < overCeiling; i++) ecs.destroy(pieces[i].entity);
+/**
+ * Keeps the pile of pieces under control. There are two limits, and they deliberately count
+ * different things:
+ *
+ * - MAX_DEBRIS counts only pieces still in their prime. Going over retires the oldest of them,
+ *   which just starts them shrinking away. Pieces already on their way out must *not* count here.
+ *   When they did, every call condemned a fresh batch while skipping the dying ones, so roughly
+ *   twenty more pieces were sentenced every frame until the whole pile had been — which looked
+ *   like rubble vanishing a heartbeat after the explosion that made it.
+ * - MAX_DEBRIS_TOTAL counts everything, fading included, and is the backstop: past it pieces are
+ *   dropped at once rather than given half a second to shrink, because several hundred extra
+ *   bodies is a stalled frame.
+ *
+ * Entity ids only ever increase, so sorting by id ascending is exactly oldest-first — which is
+ * what we want, and steadier than comparing time left, since that is jittered at birth.
+ */
+export function trimDebris(): void {
+    const { ecs } = game();
+    const { fresh, fading } = census();
 
-    // Whatever is still over the soft cap is retired gently, and staggered across the shrink
-    // window: removing a hundred bodies and geometries on one frame is its own stutter
-    let over = pieces.length - overCeiling - MAX_DEBRIS;
-    for (let i = overCeiling; i < pieces.length && over > 0; i++) {
-        const lifetime = ecs.get(pieces[i].entity, Lifetime);
-        if (!lifetime || lifetime.remaining <= DEBRIS_SHRINK_TIME) continue;
-        lifetime.remaining = DEBRIS_SHRINK_TIME * (0.35 + 0.65 * Math.random());
-        over--;
+    const over = fresh.length - MAX_DEBRIS;
+    if (over > 0) {
+        fresh.sort((a, b) => a - b);
+        for (let i = 0; i < over; i++) {
+            const lifetime = ecs.get(fresh[i], Lifetime);
+            // Staggered across the shrink window, so a hundred pieces don't wink out together
+            if (lifetime) lifetime.remaining = DEBRIS_SHRINK_TIME * (0.35 + 0.65 * Math.random());
+        }
     }
+
+    let overCeiling = fresh.length + fading.length - MAX_DEBRIS_TOTAL;
+    if (overCeiling <= 0) return;
+
+    // The most faded first, then the oldest of the rest if that still isn't enough
+    fading.sort((a, b) => a - b);
+    for (let i = 0; i < fading.length && overCeiling > 0; i++, overCeiling--) ecs.destroy(fading[i]);
+    for (let i = 0; i < fresh.length && overCeiling > 0; i++, overCeiling--) ecs.destroy(fresh[i]);
 }
 
 class DebrisSystem implements System {

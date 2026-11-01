@@ -110,8 +110,10 @@ class PhysicsWorld {
         pair(actor, scenery, 0, 0);
         pair(actor, prop, 0, 0.05);
         pair(actor, debris, 0, 0);
-        pair(prop, scenery, 0.5, 0.1);
-        pair(prop, prop, 0.4, 0.1);
+        // No bounce between props and what they rest on. A stack of crates with any restitution
+        // at all micro-bounces forever, never settles, never sleeps, and slowly leans over.
+        pair(prop, scenery, 0.6, 0);
+        pair(prop, prop, 0.55, 0);
         pair(debris, scenery, 0.6, 0.15);
         pair(debris, prop, 0.5, 0.1);
         pair(debris, debris, 0.5, 0.05);

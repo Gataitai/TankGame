@@ -6,12 +6,20 @@ import { Renderable } from "@2/components/Visual";
 import { Breakable } from "@2/components/Gameplay";
 import { fractureMesh } from "@2/physics/Fracture";
 import { spawnDebris } from "@2/prefabs/debris";
-import { trimDebris } from "@2/systems/DebrisSystem";
+import { debrisRoom, trimDebris } from "@2/systems/DebrisSystem";
 import { releaseRenderable } from "@2/prefabs/props";
 import { game } from "@2/scene/Game";
 import { BREAK_BUDGET_MS, MAX_BREAK_QUEUE } from "@2/config";
 
 const MAX_SPIN = 8;
+
+/**
+ * Pieces a thing leaves behind even when the pile is already full.
+ *
+ * Something always has to come out of a block, or it would appear to evaporate. The surplus is
+ * covered by retiring the oldest rubble instead (see trimDebris).
+ */
+const MIN_PIECES = 3;
 
 /** One object waiting to be cut up. It owns `object` until the job has run. */
 type BreakJob = {
@@ -111,9 +119,14 @@ class BreakSystem implements System {
             if (mesh.isMesh && mesh.visible && mesh.geometry?.getAttribute("position")) meshes.push(mesh);
         });
 
+        // Cut no more pieces than there is room for. Making the full ten and letting the cap
+        // retire seven of them straight away is what made rubble flicker out of existence just
+        // after an explosion; a full pile now yields fewer, chunkier pieces that actually stay.
+        const pieces = Math.max(MIN_PIECES, Math.min(job.pieces, debrisRoom()));
+
         const away = new Vector3();
         for (const mesh of meshes) {
-            for (const fragment of fractureMesh(mesh, job.pieces, job.impact)) {
+            for (const fragment of fractureMesh(mesh, pieces, job.impact)) {
                 // Away from the impact (and a bit upwards), on top of the speed it already had
                 away.copy(fragment.center).sub(job.impact);
                 away.z = Math.max(away.z, 0) + 0.3;
@@ -128,7 +141,8 @@ class BreakSystem implements System {
         // The pieces carry their own fresh geometries now, and the material was always shared
         releaseRenderable({ object: job.object, ownsGeometry: true });
 
-        // Retire the oldest pieces straight away, so a big explosion never overshoots the cap
+        // Retire the oldest rubble now rather than next frame, so the room this job's successors
+        // see is up to date
         trimDebris();
     }
 }

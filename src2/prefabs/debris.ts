@@ -1,5 +1,5 @@
 import { Box3, Mesh, Vector3 } from "three";
-import { Body, Sphere as SphereShape, Vec3 } from "cannon-es";
+import { Body, Box, Vec3 } from "cannon-es";
 import type { EntityId } from "@2/ecs/Ecs";
 import { PhysicsBody, Transform } from "@2/components/Spatial";
 import { Lifetime, Renderable } from "@2/components/Visual";
@@ -20,21 +20,19 @@ const DENSITY = 0.5;
 const MIN_MASS = 0.02;
 
 /**
- * A piece collides as a ball, not as a box.
+ * A piece collides as a box matching the shard it was cut from, so it tumbles and comes to rest on
+ * a face instead of rolling like a marble.
  *
- * This is the single biggest thing standing between a big explosion and a smooth frame. Box-on-box
- * is the most expensive test cannon-es does — a separating-axis search with clipping — and a fresh
- * pile of rubble is hundreds of those every frame. A ball is a subtraction and a comparison.
- * Measured on a pillar's worth of rubble (270 pieces flying, landing and settling):
+ * Box-on-box is the most expensive test cannon-es does (a separating-axis search with clipping),
+ * and a ball would be far cheaper, but a ball rolls — which is wrong for an angular chunk of
+ * rubble and plainly visible. What makes the accurate shape affordable instead is the damping and
+ * sleep settings below: rubble sheds its energy fast and gives up quickly, so the expensive tests
+ * only happen while pieces are actually moving.
  *
- *     boxes    5.21 ms/frame average, 18.1 ms worst, 100 of 270 still awake after 4 s
- *     balls    0.74 ms/frame average,  2.0 ms worst,   2 of 270 still awake after 4 s
- *
- * The pieces still look like the angular shards they are cut from — only what they collide *as*
- * changes — and they come to rest about a third of a tile further from where they landed.
+ * The box is a little smaller than the shard's bounding box, which a cut piece never fills.
  */
-const RADIUS_FIT = 0.9;
-const MIN_RADIUS = 0.03;
+const BOX_FIT = 0.8;
+const MIN_HALF_EXTENT = 0.03;
 
 const _bounds = new Box3();
 const _offset = new Vector3();
@@ -72,8 +70,11 @@ export function spawnDebris(fragment: Fragment, velocity: Vector3, spin: Vector3
     ecs.add(entity, Lifetime, { remaining: lifetime, total: lifetime, shrink: DEBRIS_SHRINK_TIME });
 
     const size = fragment.size;
-    // The mean half-extent, so the ball neither swallows the piece nor rattles around inside it
-    const radius = Math.max(MIN_RADIUS, ((size.x + size.y + size.z) / 6) * RADIUS_FIT);
+    const half = new Vector3(
+        Math.max(MIN_HALF_EXTENT, (size.x / 2) * BOX_FIT),
+        Math.max(MIN_HALF_EXTENT, (size.y / 2) * BOX_FIT),
+        Math.max(MIN_HALF_EXTENT, (size.z / 2) * BOX_FIT),
+    );
 
     // Box3 of the actual geometry keeps the body centred on the visible piece
     _bounds.copy(fragment.geometry.boundingBox ?? _bounds.makeEmpty());
@@ -88,14 +89,14 @@ export function spawnDebris(fragment: Fragment, velocity: Vector3, spin: Vector3
         position: new Vec3(fragment.center.x, fragment.center.y, fragment.center.z),
         // Rubble bleeds off its energy quickly and is quick to give up and sleep. A pile of small
         // boxes resting on each other will nudge itself awake forever otherwise, and a sleeping
-        // body is almost free while an awake one is not — this is what makes a big, long-lived
-        // pile affordable at all.
+        // body is almost free while an awake one is not — this is what makes an accurately shaped,
+        // long-lived pile affordable at all.
         linearDamping: 0.4,
         angularDamping: 0.9,
         sleepSpeedLimit: 0.7,
         sleepTimeLimit: 0.2,
     });
-    body.addShape(new SphereShape(radius), new Vec3(_offset.x, _offset.y, _offset.z));
+    body.addShape(new Box(new Vec3(half.x, half.y, half.z)), new Vec3(_offset.x, _offset.y, _offset.z));
     body.velocity.set(velocity.x, velocity.y, velocity.z);
     body.angularVelocity.set(spin.x, spin.y, spin.z);
 

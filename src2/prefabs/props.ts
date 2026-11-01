@@ -63,8 +63,12 @@ function createProp(
         mass: dynamic ? options.mass ?? mass : 0,
         material: dynamic ? PhysicsMaterials.prop : PhysicsMaterials.scenery,
         position: new Vec3(position.x, position.y, position.z),
-        linearDamping: 0.05,
-        angularDamping: 0.1,
+        linearDamping: 0.08,
+        angularDamping: 0.2,
+        // Quick to settle and quick to sleep, so a stack that has come to rest stops being
+        // nudged about by the solver's leftovers. Slow enough that a shove still reads.
+        sleepSpeedLimit: 0.15,
+        sleepTimeLimit: 0.4,
     });
     const q = object.quaternion;
     body.quaternion.set(q.x, q.y, q.z, q.w);

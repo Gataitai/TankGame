@@ -54,12 +54,20 @@ export const MAX_BREAK_QUEUE = 32;
 /**
  * Most pieces of broken things that may exist at once; the oldest shrink away early.
  *
- * Rubble is only expensive while it is moving — once a pile settles the bodies fall asleep and
- * cost almost nothing, so this is set high enough that DEBRIS_LIFETIME is what actually decides
- * when pieces go away. Each piece is also its own draw call, which is the other reason not to
- * raise it without measuring.
+ * Pieces collide as boxes so they tumble and settle instead of rolling like marbles, and box-on-box
+ * is the expensive test, so this number is what a big explosion costs. Measured on one blast, over
+ * the seven seconds it takes to fly, land and settle:
+ *
+ *     100 pieces   2.43 ms/frame avg,  33 ms worst,   4 frames over budget
+ *     160 pieces   2.56 ms/frame avg,  34 ms worst,   4 frames over budget
+ *     220 pieces   3.73 ms/frame avg,  52 ms worst,  12 frames over budget
+ *     300 pieces   5.43 ms/frame avg,  60 ms worst,  21 frames over budget
+ *
+ * The cost is flat up to about 160 and climbs steeply after, because pieces in a pile all touch
+ * each other. Raise it for deeper rubble and a rougher moment right after an explosion. Rubble at
+ * rest is nearly free either way: a settled pile of this size costs about 1.2 ms a frame.
  */
-export const MAX_DEBRIS = 300;
+export const MAX_DEBRIS = 170;
 
 /**
  * Hard ceiling on pieces, the ones already fading away included.
@@ -69,7 +77,7 @@ export const MAX_DEBRIS = 300;
  * the retired ones are still on their way out — measured at 616 pieces against a cap of 300, which
  * is a stalled frame. Past this ceiling the most faded pieces are dropped immediately instead.
  */
-export const MAX_DEBRIS_TOTAL = 340;
+export const MAX_DEBRIS_TOTAL = 200;
 
 /**
  * Seconds a piece lies around before it shrinks away (randomised a little, so a pile doesn't
